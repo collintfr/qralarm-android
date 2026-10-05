@@ -12,7 +12,7 @@ class CanManipulateAlarm @Inject constructor(
     suspend operator fun invoke(alarmId: Long): Boolean {
         val alarm = alarmsRepository.getAlarm(alarmId = alarmId) ?: return false
 
-        if (!alarm.isUsingCode || !alarm.isAlarmEnabled || alarm.cancelLockDurationInMinutes == 0) {
+        if (!alarm.dismissalMethod.requiresCamera || !alarm.isAlarmEnabled || alarm.cancelLockDurationInMinutes == 0) {
             return true
         }
 

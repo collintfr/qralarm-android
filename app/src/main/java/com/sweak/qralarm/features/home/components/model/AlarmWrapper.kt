@@ -1,5 +1,6 @@
 package com.sweak.qralarm.features.home.components.model
 
+import com.sweak.qralarm.core.domain.alarm.DismissalMethod
 import com.sweak.qralarm.core.ui.model.AlarmRepeatingScheduleWrapper
 
 data class AlarmWrapper(
@@ -10,7 +11,8 @@ data class AlarmWrapper(
     val nextAlarmTimeInMillis: Long,
     val alarmRepeatingScheduleWrapper: AlarmRepeatingScheduleWrapper,
     val isAlarmEnabled: Boolean,
-    val isCodeEnabled: Boolean,
+    val dismissalMethod: DismissalMethod,
+    val objectCategoryId: String? = null,
     val skipNextAlarmConfig: SkipNextAlarmConfig,
     val isEmergencyAvailable: Boolean
 ) {

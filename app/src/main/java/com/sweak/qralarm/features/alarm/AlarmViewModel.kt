@@ -6,8 +6,10 @@ import com.sweak.qralarm.R
 import com.sweak.qralarm.core.domain.alarm.Alarm
 import com.sweak.qralarm.core.domain.alarm.AlarmsRepository
 import com.sweak.qralarm.core.domain.alarm.DisableAlarm
+import com.sweak.qralarm.core.domain.alarm.DismissalMethod
 import com.sweak.qralarm.core.domain.alarm.SetAlarm
 import com.sweak.qralarm.core.domain.alarm.SnoozeAlarm
+import com.sweak.qralarm.core.domain.recognition.ObjectCategories
 import com.sweak.qralarm.core.ui.compose_util.UiText
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedFactory
@@ -64,8 +66,9 @@ class AlarmViewModel @AssistedInject constructor(
                     } else if (isAlarmSnoozed) {
                         UiText.StringResource(resId = R.string.alarm_snoozed_until)
                     } else null
-                    val codeName = if (it.isUsingCode && (isAlarmRunning || isAlarmSnoozed)) {
-                        it.assignedCode?.name
+                    val codeName = if (it.dismissalMethod.requiresCamera && (isAlarmRunning || isAlarmSnoozed)) {
+                        if (it.dismissalMethod == DismissalMethod.OBJECT) it.objectCategoryId?.let(ObjectCategories::displayName)
+                        else it.assignedCode?.name
                     } else null
                     val timeToShow =
                         if (isAlarmSnoozed && it.snoozeConfig.nextSnoozedAlarmTimeInMillis != null) {
@@ -82,7 +85,7 @@ class AlarmViewModel @AssistedInject constructor(
                             isAlarmSnoozed = isAlarmSnoozed,
                             isSnoozeAvailable = isSnoozeAvailable,
                             isInteractionEnabled = isInteractionEnabled,
-                            isEmergencyAvailable = it.isUsingCode && it.isEmergencyTaskEnabled
+                            isEmergencyAvailable = it.dismissalMethod.requiresCamera && it.isEmergencyTaskEnabled
                         )
                     }
                 }
@@ -93,9 +96,9 @@ class AlarmViewModel @AssistedInject constructor(
     fun onEvent(event: AlarmScreenUserEvent) {
         when (event) {
             is AlarmScreenUserEvent.TryStopAlarm -> {
-                val isUsingCode = ::alarm.isInitialized && alarm.isUsingCode
+                val requiresCamera = ::alarm.isInitialized && alarm.dismissalMethod.requiresCamera
 
-                if (!isUsingCode) {
+                if (!requiresCamera) {
                     viewModelScope.launch {
                         isAlarmBeingStopped = true
                         alarmsRepository.setAlarmSnoozed(
@@ -114,7 +117,7 @@ class AlarmViewModel @AssistedInject constructor(
                         if (currentState.permissionsDialogState.cameraPermissionState == true) {
                             viewModelScope.launch {
                                 backendEventsChannel.send(
-                                    AlarmScreenBackendEvent.RequestCodeScanToStopAlarm
+                                    AlarmScreenBackendEvent.RequestCameraChallengeToStopAlarm
                                 )
                             }
 
@@ -166,7 +169,7 @@ class AlarmViewModel @AssistedInject constructor(
                         }
 
                         backendEventsChannel.send(
-                            AlarmScreenBackendEvent.RequestCodeScanToStopAlarm
+                            AlarmScreenBackendEvent.RequestCameraChallengeToStopAlarm
                         )
                     }
 

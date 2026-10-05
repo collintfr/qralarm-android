@@ -12,6 +12,7 @@ import com.sweak.qralarm.core.domain.alarm.DEFAULT_CANCEL_LOCK_DURATION_IN_MINUT
 import com.sweak.qralarm.core.domain.alarm.DEFAULT_GENTLE_WAKE_UP_DURATION_IN_SECONDS
 import com.sweak.qralarm.core.domain.alarm.DEFAULT_SNOOZE_NUMBER_TO_DURATION_PAIR
 import com.sweak.qralarm.core.domain.alarm.DEFAULT_TEMPORARY_MUTE_DURATION_IN_SECONDS
+import com.sweak.qralarm.core.domain.alarm.DismissalMethod
 import com.sweak.qralarm.core.ui.model.AlarmRepeatingScheduleWrapper
 import com.sweak.qralarm.core.ui.model.Code
 import kotlinx.parcelize.Parcelize
@@ -41,7 +42,9 @@ data class AddEditAlarmFlowState(
     val alarmVolumePercentage: Int? = null,
     val isChooseAlarmRingtoneConfigDialogVisible: Boolean = false,
     val areVibrationsEnabled: Boolean = true,
-    val isCodeEnabled: Boolean = true,
+    val dismissalMethod: DismissalMethod = DismissalMethod.CODE,
+    val objectCategoryId: String? = null,
+    val showObjectSelectionError: Boolean = false,
     val isAssignCodeDialogVisible: Boolean = false,
     val editCodeNameDialogState: EditCodeNameDialogState = EditCodeNameDialogState(),
     val previouslySavedCodes: List<Code> = emptyList(),

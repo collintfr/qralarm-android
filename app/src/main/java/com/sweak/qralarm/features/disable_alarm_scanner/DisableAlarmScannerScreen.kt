@@ -13,8 +13,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.stringResource
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import com.sweak.qralarm.R
 import com.sweak.qralarm.core.ui.components.code_scanner.compose.CodeScanner
 import com.sweak.qralarm.core.ui.compose_util.ObserveAsEvents
@@ -42,7 +44,7 @@ fun DisableAlarmScannerScreen(
         flow = disableAlarmScannerViewModel.backendEvents,
         onEvent = { event ->
             when (event) {
-                is DisableAlarmScannerScreenBackendEvent.CorrectCodeScanned -> {
+                is DisableAlarmScannerScreenBackendEvent.ChallengeCompleted -> {
                     onAlarmDisabled(event.uriStringToOpen)
                 }
 
@@ -62,13 +64,15 @@ fun DisableAlarmScannerScreen(
     val windowInfo = LocalWindowInfo.current
 
     LaunchedEffect(lifecycleOwner) {
-        disableAlarmScannerViewModel.onEvent(
-            DisableAlarmScannerScreenUserEvent.InitializeCamera(
-                appContext = context,
-                lifecycleOwner = lifecycleOwner,
-                windowInfo = windowInfo
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            disableAlarmScannerViewModel.initializeCamera(
+                DisableAlarmScannerScreenUserEvent.InitializeCamera(
+                    appContext = context,
+                    lifecycleOwner = lifecycleOwner,
+                    windowInfo = windowInfo
+                )
             )
-        )
+        }
     }
 
     DisableAlarmScannerScreenContent(
@@ -95,6 +99,10 @@ fun DisableAlarmScannerScreenContent(
             surfaceRequest = state.surfaceRequest,
             isFlashEnabled = state.isFlashEnabled,
             codeName = state.codeName,
+            objectName = state.objectName,
+            detectionBox = state.detectionBox,
+            confirmationProgress = state.confirmationProgress,
+            recognitionError = state.recognitionError,
             onCloseClicked = { onEvent(DisableAlarmScannerScreenUserEvent.OnCloseClicked) },
             onToggleFlash = { onEvent(DisableAlarmScannerScreenUserEvent.ToggleFlash) },
             paddingValues = paddingValues

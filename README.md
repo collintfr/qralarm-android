@@ -32,7 +32,7 @@ If you are seeking to:
 
 Then you have found the perfect alarm clock application - this is your new life hack! 📈
 
-QRAlarm is a simple and lightweight alarm clock! Don't worry about low memory in your phone - QRAlarm is only around 15 MB making it perfect fit for everyone, no matter the device! 📱
+QRAlarm runs on Android 7.0 and later. Object recognition uses a bundled model and works offline. 📱
 
 QRAlarm has a simple, clean and intuitive user interface that makes the experience easy and seamless! You will feel at ease using QRAlarm as it does not overwhelm the user with bloated functions. QRAlarm is uncluttered, clear and beautiful! ✨
 
@@ -68,3 +68,63 @@ All official open-source releases of QRAlarm are signed with the following SHA-2
 
 You can verify an APK’s signature with:
 `keytool -printcert -jarfile qralarm-android-signed.apk`
+
+
+## Development with devenv
+
+Install [devenv](https://devenv.sh/getting-started/), then run commands from the repository root.
+The locked environment supplies JDK 21, Android SDK 37.0, build-tools 36, NDK 28.2, and adb.
+A debug build does not need a release keystore. Release signing still uses your local,
+ignored `keystore.properties` and keystore.
+
+| Command | Purpose |
+| --- | --- |
+| `devenv shell -- compile` | Build `app/build/outputs/apk/debug/app-debug.apk` |
+| `devenv shell -- lint` | Run Android lint |
+| `devenv shell -- test` | Run JVM unit tests |
+| `devenv shell -- test-device` | Run Room migration and offline model tests on connected devices |
+| `devenv shell -- upload-app [serial]` | Build and install the debug APK using adb |
+| `devenv shell -- fetch-model` | Verify or restore the pinned model and label assets |
+
+Enable USB debugging and accept the computer's authorization prompt on a connected phone.
+Use `devenv shell -- adb devices` to find its serial. `upload-app` requires a serial when
+multiple devices are connected. Installation keeps application data and requires a compatible
+signing key; it reports an adb error if an installed release uses a different key.
+
+## Object recognition alarms
+
+Choose **Recognize an object** in the alarm editor and select one category from the searchable
+list. Tap **Stop** when the alarm rings, then show the selected object to the camera. The
+recognition camera shows a bounding box and confirmation progress. Torch, temporary mute,
+cancellation locks, snoozing, and the configured emergency task work as they do for code alarms.
+Close and reopen the scanner to retry a camera or model error; an error never dismisses the alarm.
+
+Recognition runs entirely on the phone using the bundled EfficientDet-Lite0 int8 model and
+MediaPipe Tasks Vision. All 80 COCO categories are selectable. **Bottle** includes water bottles
+and other bottles; the model does not classify rooms or identify a particular physical object.
+The current confirmation policy requires three consecutive detections at confidence 0.60 or
+higher, spanning at least 150 ms, with no gap longer than 500 ms. CameraX keeps the latest frame
+when inference cannot keep pace. These values are centralized in `ObjectConfirmation`.
+
+The model source is Google's [versioned EfficientDet-Lite0 asset](https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/int8/1/efficientdet_lite0.tflite),
+SHA-256 `0720bf247bd76e6594ea28fa9c6f7c5242be774818997dbbeffc4da460c723bb`.
+The bundled [COCO label map](https://storage.googleapis.com/mediapipe-tasks/object_detector/labelmap.txt)
+has SHA-256 `f8803ef7900160c629d570848dfda4175e21667bf7b71f73f8ece4938c9f2bf2`.
+Model attribution and the Apache 2.0 license are included in the application assets.
+Backups now use format 2; format 1 code/button backups remain readable. Older app versions
+reject format 2 rather than silently losing an object's dismissal requirement.
+
+### Physical-device validation
+
+Run `compile`, `lint`, `test`, and `test-device` before device trials. For toilet, toothbrush,
+sink, and several water bottles, try at least ten presentations each in bright and dim light,
+with varied angles and clutter. Record successful confirmations, time from first clear view
+to dismissal, and failures. Then record one-minute negative trials per category with the target
+absent, including similar objects. Test portrait/landscape, torch, background/foreground,
+closing/reopening the scanner, camera permission denial, and Android 13 frame rotation.
+
+Verify one-shot and repeating dismissal, stopping while snoozed, pre-ring cancellation inside
+the cancellation lock, emergency dismissal, copying, chains, and a backup/restore round trip.
+For QR/barcode alarms, verify assigned and unassigned codes, wrong codes, and link opening.
+Calibrate the shared confidence/window constants against these recorded trials before claiming
+household accuracy or latency. Re-run the confirmation tests whenever thresholds change.

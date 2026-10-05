@@ -1,0 +1,8 @@
+EfficientDet-Lite0 int8, version 1
+Source: https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/int8/1/efficientdet_lite0.tflite
+Architecture and implementation: Google AutoML EfficientDet, https://github.com/google/automl/tree/master/efficientdet
+Copyright Google LLC and the TensorFlow Authors. Apache License 2.0; see object-model-LICENSE.txt.
+Trained on COCO 2017 (80 categories): https://cocodataset.org/
+Label map: https://storage.googleapis.com/mediapipe-tasks/object_detector/labelmap.txt
+SHA-256 model: 0720bf247bd76e6594ea28fa9c6f7c5242be774818997dbbeffc4da460c723bb
+SHA-256 labels: f8803ef7900160c629d570848dfda4175e21667bf7b71f73f8ece4938c9f2bf2

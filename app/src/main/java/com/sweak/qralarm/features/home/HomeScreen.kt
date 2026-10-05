@@ -65,6 +65,7 @@ import com.sweak.qralarm.core.designsystem.theme.Jacarta
 import com.sweak.qralarm.core.designsystem.theme.QRAlarmTheme
 import com.sweak.qralarm.core.designsystem.theme.isQRAlarmTheme
 import com.sweak.qralarm.core.designsystem.theme.space
+import com.sweak.qralarm.core.domain.alarm.DismissalMethod
 import com.sweak.qralarm.core.ui.components.MissingPermissionsBottomSheet
 import com.sweak.qralarm.core.ui.compose_util.ObserveAsEvents
 import com.sweak.qralarm.core.ui.compose_util.OnResume
@@ -581,7 +582,7 @@ private fun HomeScreenContent(
     if (state.isCameraPermissionDeniedDialogVisible) {
         QRAlarmDialog(
             title = stringResource(R.string.camera_permission_required),
-            message = stringResource(R.string.camera_permission_required_description),
+            message = stringResource(R.string.challenge_camera_permission_description),
             onDismissRequest = {
                 onEvent(HomeScreenUserEvent.CameraPermissionDeniedDialogVisible(isVisible = false))
             },
@@ -670,7 +671,7 @@ private fun HomeScreenContentPreview() {
                             alarmRepeatingMode = AlarmRepeatingScheduleWrapper.AlarmRepeatingMode.EVERYDAY
                         ),
                         isAlarmEnabled = true,
-                        isCodeEnabled = true,
+                        dismissalMethod = DismissalMethod.CODE,
                         skipNextAlarmConfig = AlarmWrapper.SkipNextAlarmConfig(
                             isSkippingNextAlarm = true,
                             isSkippingSupported = true
@@ -687,7 +688,7 @@ private fun HomeScreenContentPreview() {
                         nextAlarmTimeInMillis = 1732604400000,
                         alarmRepeatingScheduleWrapper = AlarmRepeatingScheduleWrapper(),
                         isAlarmEnabled = false,
-                        isCodeEnabled = false,
+                        dismissalMethod = DismissalMethod.NONE,
                         skipNextAlarmConfig = AlarmWrapper.SkipNextAlarmConfig(),
                         isEmergencyAvailable = false
                     )

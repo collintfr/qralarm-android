@@ -79,6 +79,7 @@ import com.sweak.qralarm.core.designsystem.theme.QRAlarmTheme
 import com.sweak.qralarm.core.designsystem.theme.isQRAlarmTheme
 import com.sweak.qralarm.core.designsystem.theme.space
 import com.sweak.qralarm.core.domain.alarm.Alarm.Ringtone
+import com.sweak.qralarm.core.domain.alarm.DismissalMethod
 import com.sweak.qralarm.core.ui.components.EditCodeNameBottomSheet
 import com.sweak.qralarm.core.ui.components.MissingPermissionsBottomSheet
 import com.sweak.qralarm.core.ui.components.NavigationButton
@@ -92,6 +93,7 @@ import com.sweak.qralarm.features.add_edit_alarm.AddEditAlarmFlowState
 import com.sweak.qralarm.features.add_edit_alarm.AddEditAlarmFlowUserEvent.AddEditAlarmScreenUserEvent
 import com.sweak.qralarm.features.add_edit_alarm.AddEditAlarmViewModel
 import com.sweak.qralarm.features.add_edit_alarm.components.ChoiceSetting
+import com.sweak.qralarm.features.add_edit_alarm.components.DismissalSettings
 import com.sweak.qralarm.features.add_edit_alarm.components.SimpleSetting
 import com.sweak.qralarm.features.add_edit_alarm.destinations.add_edit.components.AlarmDatePickerDialog
 import com.sweak.qralarm.features.add_edit_alarm.destinations.add_edit.components.AlarmScheduleCard
@@ -103,11 +105,11 @@ import com.sweak.qralarm.features.add_edit_alarm.destinations.add_edit.component
 import com.sweak.qralarm.features.add_edit_alarm.destinations.add_edit.components.DownloadCodeBottomSheet
 import com.sweak.qralarm.features.add_edit_alarm.destinations.add_edit.components.QRAlarmTimePicker
 import com.sweak.qralarm.features.alarm.components.TimeTickReceiver
+import java.io.FileOutputStream
+import java.io.IOException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.FileOutputStream
-import java.io.IOException
 
 @OptIn(ExperimentalPermissionsApi::class)
 @Composable
@@ -638,18 +640,15 @@ private fun AddEditAlarmScreenContent(
                                 bottom = MaterialTheme.space.mediumLarge
                             )
                     ) {
-                        ToggleSetting(
-                            isChecked = state.isCodeEnabled,
-                            onCheckedChange = {
-                                onEvent(
-                                    AddEditAlarmScreenUserEvent.CodeEnabledChanged(isEnabled = it)
-                                )
-                            },
-                            title = stringResource(R.string.use_qr_bar_code),
-                            compactHeight = true
+                        DismissalSettings(
+                            method = state.dismissalMethod,
+                            categoryId = state.objectCategoryId,
+                            showSelectionError = state.showObjectSelectionError,
+                            onMethodSelected = { onEvent(AddEditAlarmScreenUserEvent.DismissalMethodSelected(it)) },
+                            onObjectSelected = { onEvent(AddEditAlarmScreenUserEvent.ObjectSelected(it)) }
                         )
 
-                        AnimatedVisibility(visible = state.isCodeEnabled) {
+                        AnimatedVisibility(visible = state.dismissalMethod == DismissalMethod.CODE) {
                             Column {
                                 HorizontalDivider(
                                     thickness = 1.dp,
@@ -1229,7 +1228,7 @@ private fun AddEditAlarmScreenContent(
     if (state.isCameraPermissionDeniedDialogVisible) {
         QRAlarmDialog(
             title = stringResource(R.string.camera_permission_required),
-            message = stringResource(R.string.camera_permission_required_description),
+            message = stringResource(R.string.challenge_camera_permission_description),
             onDismissRequest = {
                 onEvent(
                     AddEditAlarmScreenUserEvent.CameraPermissionDeniedDialogVisible(

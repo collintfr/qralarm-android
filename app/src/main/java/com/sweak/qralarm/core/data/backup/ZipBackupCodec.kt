@@ -15,7 +15,6 @@ import com.sweak.qralarm.core.domain.backup.BackupReader
 import com.sweak.qralarm.core.domain.backup.CURRENT_BACKUP_FORMAT_VERSION
 import com.sweak.qralarm.core.storage.database.QRALARM_DATABASE_VERSION
 import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.serialization.json.Json
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
@@ -25,6 +24,7 @@ import java.util.zip.ZipException
 import java.util.zip.ZipFile
 import java.util.zip.ZipOutputStream
 import javax.inject.Inject
+import kotlinx.serialization.json.Json
 
 /**
  * Keeps a backup in a zip file: one JSON entry per kind of data, plus the ringtone files as they
@@ -120,12 +120,14 @@ class ZipBackupCodec @Inject constructor(
                     zipFile.readJsonEntry<PreferencesDto>(entryName = PREFERENCES_ENTRY_NAME)
                         ?: PreferencesDto()
 
+                val alarms = alarmsDto.toValidatedBackupAlarms(manifest.backupFormatVersion)
+
                 return ZipBackupReader(
                     zipFile = zipFile,
                     stagedFile = stagedFile,
                     metadata = manifest.toBackupMetadata(),
                     bundle = BackupBundle(
-                        alarms = alarmsDto.alarms.map { it.toBackupAlarm() },
+                        alarms = alarms,
                         // A code with no value could not be scanned and, being what the code is
                         // recognized by, could also collide with another one.
                         codes = codesDto.codes

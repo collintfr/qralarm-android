@@ -9,6 +9,7 @@ import com.sweak.qralarm.core.domain.alarm.CanManipulateAlarm
 import com.sweak.qralarm.core.domain.alarm.CopyAlarm
 import com.sweak.qralarm.core.domain.alarm.DeleteAlarm
 import com.sweak.qralarm.core.domain.alarm.DisableAlarm
+import com.sweak.qralarm.core.domain.alarm.DismissalMethod
 import com.sweak.qralarm.core.domain.alarm.RescheduleAlarms
 import com.sweak.qralarm.core.domain.alarm.SetAlarm
 import com.sweak.qralarm.core.domain.user.UserDataRepository
@@ -18,6 +19,8 @@ import com.sweak.qralarm.core.ui.getDaysHoursAndMinutesUntilAlarm
 import com.sweak.qralarm.core.ui.model.AlarmRepeatingScheduleWrapper.AlarmRepeatingMode.ONLY_ONCE
 import com.sweak.qralarm.features.home.components.model.AlarmWrapper
 import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -26,8 +29,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import javax.inject.Inject
-import kotlin.time.Duration.Companion.milliseconds
 
 @HiltViewModel
 class HomeViewModel @Inject constructor(
@@ -145,7 +146,8 @@ class HomeViewModel @Inject constructor(
                 nextAlarmTimeInMillis = alarm.nextAlarmTimeInMillis,
                 alarmRepeatingScheduleWrapper = alarmRepeatingScheduleWrapper,
                 isAlarmEnabled = alarm.isAlarmEnabled,
-                isCodeEnabled = alarm.isUsingCode,
+                dismissalMethod = alarm.dismissalMethod,
+                objectCategoryId = alarm.objectCategoryId,
                 skipNextAlarmConfig = AlarmWrapper.SkipNextAlarmConfig(
                     isSkippingSupported =
                         alarmRepeatingScheduleWrapper.alarmRepeatingMode != ONLY_ONCE &&
@@ -267,10 +269,10 @@ class HomeViewModel @Inject constructor(
                         )
                     }
 
-                    val isCodeEnabled = currentState.nonActiveAlarmWrappers
-                        .find { it.alarmId == event.alarmId }?.isCodeEnabled
+                    val requiresCamera = currentState.nonActiveAlarmWrappers
+                        .find { it.alarmId == event.alarmId }?.dismissalMethod?.requiresCamera
 
-                    if ((!event.cameraPermissionStatus && isCodeEnabled == true) ||
+                    if ((!event.cameraPermissionStatus && requiresCamera == true) ||
                         !event.notificationsPermissionStatus ||
                         !qrAlarmManager.canScheduleExactAlarms() ||
                         !qrAlarmManager.canUseFullScreenIntent()
@@ -280,7 +282,7 @@ class HomeViewModel @Inject constructor(
                                 HomeScreenState.PermissionsDialogState(
                                     isVisible = true,
                                     cameraPermissionState =
-                                        if (!event.cameraPermissionStatus && isCodeEnabled == true)
+                                        if (!event.cameraPermissionStatus && requiresCamera == true)
                                             false else null,
                                     notificationsPermissionState =
                                         if (!event.notificationsPermissionStatus) false else null,

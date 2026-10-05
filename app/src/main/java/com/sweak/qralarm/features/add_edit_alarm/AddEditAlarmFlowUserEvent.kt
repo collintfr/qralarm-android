@@ -2,6 +2,7 @@ package com.sweak.qralarm.features.add_edit_alarm
 
 import android.net.Uri
 import com.sweak.qralarm.core.domain.alarm.Alarm.Ringtone
+import com.sweak.qralarm.core.domain.alarm.DismissalMethod
 import com.sweak.qralarm.core.ui.model.AlarmRepeatingScheduleWrapper
 import com.sweak.qralarm.core.ui.model.Code
 
@@ -77,7 +78,9 @@ sealed class AddEditAlarmFlowUserEvent {
         ) : AddEditAlarmScreenUserEvent()
 
         data class VibrationsEnabledChanged(val areEnabled: Boolean) : AddEditAlarmScreenUserEvent()
-        data class CodeEnabledChanged(val isEnabled: Boolean) : AddEditAlarmScreenUserEvent()
+        data class ObjectSelected(val categoryId: String) : AddEditAlarmScreenUserEvent()
+
+        data class DismissalMethodSelected(val method: DismissalMethod) : AddEditAlarmScreenUserEvent()
         data class AssignCodeDialogVisible(val isVisible: Boolean) : AddEditAlarmScreenUserEvent()
         data class EditCodeNameDialogVisible(val isVisible: Boolean) : AddEditAlarmScreenUserEvent()
         data object TryScanSpecificCode : AddEditAlarmScreenUserEvent()

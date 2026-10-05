@@ -24,6 +24,9 @@ import dagger.assisted.Assisted
 import dagger.assisted.AssistedFactory
 import dagger.assisted.AssistedInject
 import dagger.hilt.android.lifecycle.HiltViewModel
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -31,9 +34,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
 
 @HiltViewModel(assistedFactory = CustomCodeScannerViewModel.Factory::class)
 class CustomCodeScannerViewModel @AssistedInject constructor(
@@ -57,6 +57,7 @@ class CustomCodeScannerViewModel @AssistedInject constructor(
 
     private var hasHandledFoundCode = false
 
+    @androidx.annotation.OptIn(androidx.camera.lifecycle.ExperimentalCameraProviderConfiguration::class)
     fun onEvent(event: CustomCodeScannerScreenUserEvent) {
         when (event) {
             is CustomCodeScannerScreenUserEvent.InitializeCamera -> viewModelScope.launch {

@@ -82,7 +82,7 @@ fun AlarmScreen(
         onEvent = { event ->
             when (event) {
                 is AlarmScreenBackendEvent.StopAlarm -> onStopAlarm()
-                is AlarmScreenBackendEvent.RequestCodeScanToStopAlarm -> onRequestCodeScan()
+                is AlarmScreenBackendEvent.RequestCameraChallengeToStopAlarm -> onRequestCodeScan()
                 is AlarmScreenBackendEvent.SnoozeAlarm -> onSnoozeAlarm()
                 is AlarmScreenBackendEvent.TryTemporarilyMuteAlarm -> {
                     context.sendBroadcast(
@@ -281,7 +281,7 @@ private fun AlarmScreenContent(
     if (state.isCameraPermissionDeniedDialogVisible) {
         QRAlarmDialog(
             title = stringResource(R.string.camera_permission_required),
-            message = stringResource(R.string.camera_permission_required_description),
+            message = stringResource(R.string.challenge_camera_permission_description),
             onDismissRequest = {
                 onEvent(AlarmScreenUserEvent.CameraPermissionDeniedDialogVisible(isVisible = false))
             },

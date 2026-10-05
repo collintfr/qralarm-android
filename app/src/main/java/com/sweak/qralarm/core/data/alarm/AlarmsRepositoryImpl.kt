@@ -3,15 +3,17 @@ package com.sweak.qralarm.core.data.alarm
 import com.sweak.qralarm.core.domain.alarm.Alarm
 import com.sweak.qralarm.core.domain.alarm.AlarmsRepository
 import com.sweak.qralarm.core.domain.alarm.Code
+import com.sweak.qralarm.core.domain.alarm.DismissalMethod
+import com.sweak.qralarm.core.domain.recognition.ObjectCategories
 import com.sweak.qralarm.core.storage.database.dao.AlarmsDao
 import com.sweak.qralarm.core.storage.database.dao.CodesDao
 import com.sweak.qralarm.core.storage.database.model.AlarmEntity
+import java.time.DayOfWeek
+import javax.inject.Inject
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapNotNull
-import java.time.DayOfWeek
-import javax.inject.Inject
 
 class AlarmsRepositoryImpl @Inject constructor(
     private val alarmsDao: AlarmsDao,
@@ -19,6 +21,7 @@ class AlarmsRepositoryImpl @Inject constructor(
 ) : AlarmsRepository {
 
     override suspend fun addOrEditAlarm(alarm: Alarm): Long {
+        require(ObjectCategories.isValid(alarm.dismissalMethod.name, alarm.objectCategoryId))
         return alarmsDao.upsertAlarm(
             alarmEntity = AlarmEntity(
                 alarmId = alarm.alarmId,
@@ -43,7 +46,8 @@ class AlarmsRepositoryImpl @Inject constructor(
                         alarm.alarmVolumeMode.volumePercentage
                     } else 0,
                 areVibrationsEnabled = alarm.areVibrationsEnabled,
-                isUsingCode = alarm.isUsingCode,
+                dismissalMethod = alarm.dismissalMethod.name,
+                objectCategoryId = alarm.objectCategoryId,
                 assignedCodeId = alarm.assignedCode?.codeId,
                 isOpenCodeLinkEnabled = alarm.isOpenCodeLinkEnabled,
                 cancelLockDurationInMinutes = alarm.cancelLockDurationInMinutes,
@@ -178,7 +182,8 @@ class AlarmsRepositoryImpl @Inject constructor(
                 else Alarm.AlarmVolumeMode.Custom(volumePercentage = this)
             },
             areVibrationsEnabled = alarmEntity.areVibrationsEnabled,
-            isUsingCode = alarmEntity.isUsingCode,
+            dismissalMethod = DismissalMethod.valueOf(alarmEntity.dismissalMethod),
+            objectCategoryId = alarmEntity.objectCategoryId,
             assignedCode = resolveCode(alarmEntity.assignedCodeId),
             isOpenCodeLinkEnabled = alarmEntity.isOpenCodeLinkEnabled,
             cancelLockDurationInMinutes = alarmEntity.cancelLockDurationInMinutes,

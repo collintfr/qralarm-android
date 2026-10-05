@@ -40,7 +40,10 @@ data class AlarmDto(
     val hasCustomRingtoneFile: Boolean = false,
     val alarmVolumePercentage: Int = 0,
     val areVibrationsEnabled: Boolean = true,
+    // Format 1 compatibility. Format 2 writes an explicit method.
     val isUsingCode: Boolean = false,
+    val dismissalMethod: String? = null,
+    val objectCategoryId: String? = null,
     val assignedCodeId: Long? = null,
     val isOpenCodeLinkEnabled: Boolean = false,
     val cancelLockDurationInMinutes: Int = DEFAULT_CANCEL_LOCK_DURATION_IN_MINUTES,

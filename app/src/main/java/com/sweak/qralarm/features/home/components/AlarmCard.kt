@@ -38,6 +38,8 @@ import com.sweak.qralarm.core.designsystem.icon.QRAlarmIcons
 import com.sweak.qralarm.core.designsystem.theme.QRAlarmTheme
 import com.sweak.qralarm.core.designsystem.theme.isQRAlarmTheme
 import com.sweak.qralarm.core.designsystem.theme.space
+import com.sweak.qralarm.core.domain.alarm.DismissalMethod
+import com.sweak.qralarm.core.domain.recognition.ObjectCategories
 import com.sweak.qralarm.core.ui.compose_util.getAlarmRepeatingScheduleString
 import com.sweak.qralarm.core.ui.getDayString
 import com.sweak.qralarm.core.ui.getTimeString
@@ -106,6 +108,14 @@ fun AlarmCard(
                     style = MaterialTheme.typography.bodyLarge
                 )
 
+                if (alarmWrapper.dismissalMethod == DismissalMethod.OBJECT) {
+                    Text(
+                        text = stringResource(R.string.object_alarm_summary,
+                            ObjectCategories.displayName(alarmWrapper.objectCategoryId.orEmpty())),
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                }
+
                 AnimatedVisibility(
                     visible = alarmWrapper.isAlarmEnabled
                 ) {
@@ -121,7 +131,7 @@ fun AlarmCard(
             }
 
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (!alarmWrapper.isCodeEnabled) {
+                if (!alarmWrapper.dismissalMethod.requiresCamera) {
                     Icon(
                         imageVector = QRAlarmIcons.NoQRCode,
                         contentDescription =
@@ -300,7 +310,7 @@ private fun AlarmCardPreview() {
                         alarmRepeatingMode = EVERYDAY
                     ),
                     isAlarmEnabled = true,
-                    isCodeEnabled = false,
+                    dismissalMethod = DismissalMethod.NONE,
                     skipNextAlarmConfig = AlarmWrapper.SkipNextAlarmConfig(
                         isSkippingSupported = true,
                         isSkippingNextAlarm = false

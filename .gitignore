@@ -20,6 +20,7 @@ devenv.local.yaml
 
 # direnv
 .direnv
+.android/
 
 # pre-commit
 .pre-commit-config.yaml

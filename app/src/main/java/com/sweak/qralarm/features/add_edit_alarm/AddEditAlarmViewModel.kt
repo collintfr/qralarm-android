@@ -11,9 +11,12 @@ import com.sweak.qralarm.core.domain.alarm.AddOrEditAlarm
 import com.sweak.qralarm.core.domain.alarm.Alarm
 import com.sweak.qralarm.core.domain.alarm.Alarm.Ringtone
 import com.sweak.qralarm.core.domain.alarm.AlarmsRepository
+import com.sweak.qralarm.core.domain.alarm.Code as DomainCode
 import com.sweak.qralarm.core.domain.alarm.CodesRepository
 import com.sweak.qralarm.core.domain.alarm.DeleteAlarm
+import com.sweak.qralarm.core.domain.alarm.DismissalMethod
 import com.sweak.qralarm.core.domain.alarm.SetAlarm
+import com.sweak.qralarm.core.domain.recognition.ObjectCategories
 import com.sweak.qralarm.core.domain.user.UserDataRepository
 import com.sweak.qralarm.core.domain.user.model.OptimizationGuideState
 import com.sweak.qralarm.core.ui.convertAlarmRepeatingMode
@@ -33,6 +36,12 @@ import dagger.assisted.Assisted
 import dagger.assisted.AssistedFactory
 import dagger.assisted.AssistedInject
 import dagger.hilt.android.lifecycle.HiltViewModel
+import java.time.DayOfWeek
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.ZonedDateTime
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
@@ -42,13 +51,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import java.time.DayOfWeek
-import java.time.Instant
-import java.time.LocalDate
-import java.time.ZoneId
-import java.time.ZonedDateTime
-import kotlin.time.Duration.Companion.milliseconds
-import com.sweak.qralarm.core.domain.alarm.Code as DomainCode
 
 @HiltViewModel(assistedFactory = AddEditAlarmViewModel.Factory::class)
 class AddEditAlarmViewModel @AssistedInject constructor(
@@ -217,7 +219,8 @@ class AddEditAlarmViewModel @AssistedInject constructor(
                                     null
                                 },
                             areVibrationsEnabled = alarm.areVibrationsEnabled,
-                            isCodeEnabled = alarm.isUsingCode,
+                            dismissalMethod = alarm.dismissalMethod,
+                            objectCategoryId = alarm.objectCategoryId,
                             previouslySavedCodes = allSavedAlarmCodes,
                             currentlyAssignedCode = alarm.assignedCode?.let {
                                 Code(id = it.codeId, value = it.value, name = it.name)
@@ -310,6 +313,10 @@ class AddEditAlarmViewModel @AssistedInject constructor(
                     nextAlarmTimeUpdateJob?.join()
 
                     val currentState = state.value
+                    if (!ObjectCategories.isValid(currentState.dismissalMethod.name, currentState.objectCategoryId)) {
+                        _state.update { it.copy(showObjectSelectionError = true) }
+                        return@launch
+                    }
 
                     if (currentState.permissionsDialogState.isVisible) {
                         with(currentState.permissionsDialogState) {
@@ -354,7 +361,7 @@ class AddEditAlarmViewModel @AssistedInject constructor(
                         return@launch
                     }
 
-                    if ((!event.cameraPermissionStatus && currentState.isCodeEnabled) ||
+                    if ((!event.cameraPermissionStatus && currentState.dismissalMethod.requiresCamera) ||
                         !event.notificationsPermissionStatus ||
                         !qrAlarmManager.canScheduleExactAlarms() ||
                         !qrAlarmManager.canUseFullScreenIntent()
@@ -365,7 +372,7 @@ class AddEditAlarmViewModel @AssistedInject constructor(
                                     AddEditAlarmFlowState.PermissionsDialogState(
                                         isVisible = true,
                                         cameraPermissionState =
-                                            if (!event.cameraPermissionStatus && currentState.isCodeEnabled)
+                                            if (!event.cameraPermissionStatus && currentState.dismissalMethod.requiresCamera)
                                                 false else null,
                                         notificationsPermissionState =
                                             if (!event.notificationsPermissionStatus) false else null,
@@ -670,10 +677,17 @@ class AddEditAlarmViewModel @AssistedInject constructor(
                 }
             }
 
-            is AddEditAlarmScreenUserEvent.CodeEnabledChanged -> {
+            is AddEditAlarmScreenUserEvent.DismissalMethodSelected -> {
                 hasUnsavedChanges = true
                 _state.update { currentState ->
-                    currentState.copy(isCodeEnabled = event.isEnabled)
+                    currentState.copy(dismissalMethod = event.method, showObjectSelectionError = false)
+                }
+            }
+
+            is AddEditAlarmScreenUserEvent.ObjectSelected -> {
+                if (event.categoryId in ObjectCategories.ids) {
+                    hasUnsavedChanges = true
+                    _state.update { it.copy(objectCategoryId = event.categoryId, showObjectSelectionError = false) }
                 }
             }
 
@@ -968,7 +982,8 @@ class AddEditAlarmViewModel @AssistedInject constructor(
                 Alarm.AlarmVolumeMode.System
             },
             areVibrationsEnabled = currentState.areVibrationsEnabled,
-            isUsingCode = currentState.isCodeEnabled,
+            dismissalMethod = currentState.dismissalMethod,
+            objectCategoryId = currentState.objectCategoryId,
             assignedCode = (currentState.temporaryAssignedCode
                 ?: currentState.currentlyAssignedCode)?.let {
                 DomainCode(codeId = it.id, value = it.value, name = it.name)

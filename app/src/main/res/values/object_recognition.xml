@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
+    <string name="dismissal_method">Dismiss alarm with</string>
+    <string name="dismissal_none">Stop button</string>
+    <string name="dismissal_object">Recognize an object</string>
+    <string name="choose_object">Choose object</string>
+    <string name="search_objects">Search objects</string>
+    <string name="choose_object_required">Choose an object before saving this alarm.</string>
+    <string name="object_recognition_description">Show the selected object to the camera to stop the alarm. Bottle includes water bottles and other bottles.</string>
+    <string name="recognition_target">Show a %1$s</string>
+    <string name="recognition_progress">Confirming object…</string>
+    <string name="recognition_error">Object recognition could not start. Close the camera and try again, or use the emergency task if available.</string>
+    <string name="challenge_camera_permission_description">Camera access is needed to scan a code or recognize your selected object.</string>
+    <string name="object_alarm_summary">Object: %1$s</string>
+    <string name="object_cancellation_lock_description">The alarm cannot be canceled or edited without showing the selected object within the selected time before it rings.</string>
+    <string name="object_emergency_task_description">Emergency task for situations where you cannot show the selected object.</string>
+</resources>

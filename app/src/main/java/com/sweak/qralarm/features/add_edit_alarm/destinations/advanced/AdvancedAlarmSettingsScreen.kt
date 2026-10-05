@@ -34,6 +34,7 @@ import com.sweak.qralarm.core.designsystem.theme.Jacarta
 import com.sweak.qralarm.core.designsystem.theme.QRAlarmTheme
 import com.sweak.qralarm.core.designsystem.theme.isQRAlarmTheme
 import com.sweak.qralarm.core.designsystem.theme.space
+import com.sweak.qralarm.core.domain.alarm.DismissalMethod
 import com.sweak.qralarm.core.ui.components.ToggleSetting
 import com.sweak.qralarm.features.add_edit_alarm.AddEditAlarmFlowState
 import com.sweak.qralarm.features.add_edit_alarm.AddEditAlarmFlowUserEvent.AdvancedAlarmSettingsScreenUserEvent
@@ -148,7 +149,7 @@ private fun AdvancedAlarmSettingsScreenContent(
                     )
                 }
 
-                if (state.isCodeEnabled) {
+                if (state.dismissalMethod.requiresCamera) {
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -166,7 +167,11 @@ private fun AdvancedAlarmSettingsScreenContent(
                                 )
                             },
                             title = stringResource(R.string.cancellation_lock),
-                            description = stringResource(R.string.cancellation_lock_description),
+                            description = stringResource(
+                                if (state.dismissalMethod == DismissalMethod.OBJECT)
+                                    R.string.object_cancellation_lock_description
+                                else R.string.cancellation_lock_description
+                            ),
                             choiceName = getCancelLockDurationAbbreviatedString(
                                 state.cancelLockDurationInMinutes
                             )
@@ -188,11 +193,13 @@ private fun AdvancedAlarmSettingsScreenContent(
                             },
                             title = stringResource(R.string.emergency),
                             description = stringResource(
-                                R.string.emergency_task_setting_description
+                                if (state.dismissalMethod == DismissalMethod.OBJECT)
+                                    R.string.object_emergency_task_description
+                                else R.string.emergency_task_setting_description
                             )
                         )
 
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && state.dismissalMethod == DismissalMethod.CODE) {
                             HorizontalDivider(
                                 thickness = 1.dp,
                                 color = LocalContentColor.current,

@@ -10,7 +10,7 @@ import com.sweak.qralarm.core.storage.database.dao.CodesDao
 import com.sweak.qralarm.core.storage.database.model.AlarmEntity
 import com.sweak.qralarm.core.storage.database.model.CodeEntity
 
-const val QRALARM_DATABASE_VERSION = 10
+const val QRALARM_DATABASE_VERSION = 11
 
 @Database(
     entities = [AlarmEntity::class, CodeEntity::class],
@@ -29,6 +29,51 @@ abstract class QRAlarmDatabase : RoomDatabase() {
     abstract fun codesDao(): CodesDao
 
     companion object {
+        val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE `alarm_new` (
+                        `alarmId` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `alarmHourOfDay` INTEGER NOT NULL,
+                        `alarmMinute` INTEGER NOT NULL,
+                        `isAlarmEnabled` INTEGER NOT NULL,
+                        `isAlarmRunning` INTEGER NOT NULL,
+                        `nextAlarmTimeInMillis` INTEGER NOT NULL,
+                        `repeatingAlarmDays` TEXT,
+                        `numberOfSnoozes` INTEGER NOT NULL,
+                        `snoozeDurationInMinutes` INTEGER NOT NULL,
+                        `numberOfSnoozesLeft` INTEGER NOT NULL,
+                        `isAlarmSnoozed` INTEGER NOT NULL,
+                        `nextSnoozedAlarmTimeInMillis` INTEGER,
+                        `ringtone` TEXT NOT NULL,
+                        `customRingtoneUriString` TEXT,
+                        `alarmVolumePercentage` INTEGER NOT NULL DEFAULT 0,
+                        `areVibrationsEnabled` INTEGER NOT NULL,
+                        `dismissalMethod` TEXT NOT NULL,
+                        `objectCategoryId` TEXT,
+                        `assignedCodeId` INTEGER,
+                        `isOpenCodeLinkEnabled` INTEGER NOT NULL DEFAULT FALSE,
+                        `cancelLockDurationInMinutes` INTEGER NOT NULL DEFAULT 60,
+                        `isEmergencyTaskEnabled` INTEGER NOT NULL DEFAULT TRUE,
+                        `alarmLabel` TEXT,
+                        `gentleWakeUpDurationInSeconds` INTEGER NOT NULL,
+                        `temporaryMuteDurationInSeconds` INTEGER NOT NULL,
+                        `skipAlarmUntilTimeInMillis` INTEGER,
+                        FOREIGN KEY(`assignedCodeId`) REFERENCES `code`(`codeId`) ON UPDATE NO ACTION ON DELETE SET NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("""
+                    INSERT INTO alarm_new (alarmId, alarmHourOfDay, alarmMinute, isAlarmEnabled, isAlarmRunning, nextAlarmTimeInMillis, repeatingAlarmDays, numberOfSnoozes, snoozeDurationInMinutes, numberOfSnoozesLeft, isAlarmSnoozed, nextSnoozedAlarmTimeInMillis, ringtone, customRingtoneUriString, alarmVolumePercentage, areVibrationsEnabled, assignedCodeId, isOpenCodeLinkEnabled, cancelLockDurationInMinutes, isEmergencyTaskEnabled, alarmLabel, gentleWakeUpDurationInSeconds, temporaryMuteDurationInSeconds, skipAlarmUntilTimeInMillis, dismissalMethod, objectCategoryId)
+                    SELECT alarmId, alarmHourOfDay, alarmMinute, isAlarmEnabled, isAlarmRunning, nextAlarmTimeInMillis, repeatingAlarmDays, numberOfSnoozes, snoozeDurationInMinutes, numberOfSnoozesLeft, isAlarmSnoozed, nextSnoozedAlarmTimeInMillis, ringtone, customRingtoneUriString, alarmVolumePercentage, areVibrationsEnabled, assignedCodeId, isOpenCodeLinkEnabled, cancelLockDurationInMinutes, isEmergencyTaskEnabled, alarmLabel, gentleWakeUpDurationInSeconds, temporaryMuteDurationInSeconds, skipAlarmUntilTimeInMillis, CASE WHEN isUsingCode = 1 THEN 'CODE' ELSE 'NONE' END, NULL FROM alarm
+                """.trimIndent())
+                db.execSQL("DROP TABLE alarm")
+                db.execSQL("ALTER TABLE alarm_new RENAME TO alarm")
+                db.execSQL("CREATE INDEX index_alarm_assignedCodeId ON alarm(assignedCodeId)")
+            }
+        }
+
         val MIGRATION_3_4 = object : Migration(3, 4) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 // This migration handles the removal of the column isTemporaryMuteEnabled in favor

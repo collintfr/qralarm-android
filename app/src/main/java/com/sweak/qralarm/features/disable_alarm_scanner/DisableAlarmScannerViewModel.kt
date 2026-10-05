@@ -2,15 +2,16 @@ package com.sweak.qralarm.features.disable_alarm_scanner
 
 import android.os.Build
 import android.util.Log
+import android.util.Size
 import androidx.camera.camera2.Camera2Config
 import androidx.camera.core.Camera
-import androidx.camera.core.CameraInfoUnavailableException
 import androidx.camera.core.CameraSelector.DEFAULT_BACK_CAMERA
 import androidx.camera.core.FocusMeteringAction
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
 import androidx.camera.core.SurfaceOrientedMeteringPointFactory
 import androidx.camera.core.resolutionselector.ResolutionSelector
+import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.lifecycle.awaitInstance
 import androidx.compose.ui.platform.WindowInfo
@@ -19,13 +20,23 @@ import androidx.lifecycle.viewModelScope
 import com.sweak.qralarm.core.domain.alarm.Alarm
 import com.sweak.qralarm.core.domain.alarm.AlarmsRepository
 import com.sweak.qralarm.core.domain.alarm.DisableAlarm
+import com.sweak.qralarm.core.domain.alarm.DismissalMethod
 import com.sweak.qralarm.core.domain.alarm.SetAlarm
+import com.sweak.qralarm.core.domain.recognition.ObjectCategories
 import com.sweak.qralarm.core.ui.components.code_scanner.analyzer.CodeDetector
 import com.sweak.qralarm.core.ui.components.code_scanner.analyzer.ZXingCodeAnalyzer
+import com.sweak.qralarm.core.ui.components.object_scanner.ObjectAnalyzer
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedFactory
 import dagger.assisted.AssistedInject
 import dagger.hilt.android.lifecycle.HiltViewModel
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+import kotlin.time.Duration.Companion.milliseconds
+import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
@@ -35,10 +46,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
-import kotlin.time.Duration.Companion.milliseconds
 
 @HiltViewModel(assistedFactory = DisableAlarmScannerViewModel.Factory::class)
 class DisableAlarmScannerViewModel @AssistedInject constructor(
@@ -60,7 +67,9 @@ class DisableAlarmScannerViewModel @AssistedInject constructor(
     private lateinit var alarm: Alarm
 
     private var camera: Camera? = null
-    private var shouldScan = true
+    private val shouldScan = AtomicBoolean(true)
+    private val challengeCompleted = AtomicBoolean(false)
+    private val cameraSession = AtomicInteger()
 
     private var _state = MutableStateFlow(DisableAlarmScannerScreenState())
     val state = _state.asStateFlow()
@@ -71,133 +80,124 @@ class DisableAlarmScannerViewModel @AssistedInject constructor(
     private var lastWrongCodeWarningMillis = 0L
     private val wrongCodeWarningDelayMillis = 3000L
 
-    init {
-        viewModelScope.launch {
-            alarmsRepository.getAlarm(alarmId = idOfAlarm)?.let {
-                alarm = it
+    private val loadedAlarm = viewModelScope.async {
+        requireNotNull(alarmsRepository.getAlarm(alarmId = idOfAlarm))
+    }
 
-                _state.update { currentState ->
-                    currentState.copy(codeName = alarm.assignedCode?.name)
-                }
+    /** The screen owns this coroutine so leaving or backgrounding it releases the camera. */
+    @androidx.annotation.OptIn(androidx.camera.lifecycle.ExperimentalCameraProviderConfiguration::class)
+    suspend fun initializeCamera(event: DisableAlarmScannerScreenUserEvent.InitializeCamera) {
+        val session = cameraSession.incrementAndGet()
+        var imageAnalysis: ImageAnalysis? = null
+        var provider: ProcessCameraProvider? = null
+        var executor: ExecutorService? = null
+        var analyzer: ImageAnalysis.Analyzer? = null
+        try {
+            alarm = loadedAlarm.await()
+            if (challengeCompleted.get()) awaitCancellation()
+            shouldScan.set(true)
+            _state.update { it.copy(
+                codeName = if (alarm.dismissalMethod == DismissalMethod.CODE) alarm.assignedCode?.name else null,
+                objectName = if (alarm.dismissalMethod == DismissalMethod.OBJECT)
+                    alarm.objectCategoryId?.let(ObjectCategories::displayName) else null,
+                detectionBox = null, confirmationProgress = 0f, recognitionError = false
+            ) }
+            check(alarm.dismissalMethod.requiresCamera)
+            analyzer = if (alarm.dismissalMethod == DismissalMethod.OBJECT) {
+                val target = requireNotNull(alarm.objectCategoryId)
+                require(target in ObjectCategories.ids)
+                ObjectAnalyzer(event.appContext, target, onResult = { box, progress, completed ->
+                    viewModelScope.launch {
+                        if (cameraSession.get() == session && shouldScan.get()) {
+                            _state.update { it.copy(detectionBox = box, confirmationProgress = progress) }
+                            if (completed && shouldScan.compareAndSet(true, false)) completeChallenge(null)
+                        }
+                    }
+                }, onError = { exception ->
+                    Log.e("ObjectAnalyzer", "Recognition failed", exception)
+                    viewModelScope.launch {
+                        if (cameraSession.get() == session) {
+                            _state.update { it.copy(recognitionError = true, detectionBox = null, confirmationProgress = 0f) }
+                        }
+                    }
+                })
+            } else {
+                ZXingCodeAnalyzer(getBarcodeDetector(session))
             }
+            val analysis = getImageAnalysisUseCase().also { imageAnalysis = it }
+            val worker = Executors.newSingleThreadExecutor().also { executor = it }
+            analysis.setAnalyzer(worker, analyzer)
+            try {
+                ProcessCameraProvider.configureInstance(Camera2Config.defaultConfig())
+            } catch (_: IllegalStateException) { /* Already configured by another scanner. */ }
+            val cameraProvider = ProcessCameraProvider.awaitInstance(event.appContext).also { provider = it }
+            cameraProvider.unbindAll()
+            camera = cameraProvider.bindToLifecycle(
+                event.lifecycleOwner, DEFAULT_BACK_CAMERA, getCameraPreviewUseCase(), analysis
+            ).apply { configureAutoFocus(event.windowInfo) }
+            awaitCancellation()
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (exception: Exception) {
+            Log.e("AlarmCamera", "Camera challenge failed", exception)
+            if (::alarm.isInitialized && alarm.dismissalMethod == DismissalMethod.OBJECT) {
+                _state.update { it.copy(recognitionError = true) }
+                awaitCancellation()
+            } else {
+                backendEventsChannel.send(DisableAlarmScannerScreenBackendEvent.CameraInitializationError)
+            }
+        } finally {
+            cameraSession.incrementAndGet()
+            turnOffFlash()
+            imageAnalysis?.clearAnalyzer()
+            provider?.unbindAll()
+            camera = null
+            _state.update { it.copy(surfaceRequest = null, isFlashEnabled = false, detectionBox = null, confirmationProgress = 0f) }
+            // Queue closure behind any inference in progress, on the detector's owning thread.
+            val closable = analyzer as? AutoCloseable
+            if (executor != null) {
+                executor.execute { closable?.close() }
+                executor.shutdown()
+            } else closable?.close()
         }
     }
 
     fun onEvent(event: DisableAlarmScannerScreenUserEvent) {
-        when (event) {
-            is DisableAlarmScannerScreenUserEvent.InitializeCamera -> viewModelScope.launch {
-                val imageAnalysisUseCase = getImageAnalysisUseCase()
-                val cameraExecutor = Executors.newSingleThreadExecutor()
-
-                imageAnalysisUseCase.setAnalyzer(cameraExecutor, getCodeAnalyzer())
-
-                try {
-                    ProcessCameraProvider.configureInstance(Camera2Config.defaultConfig())
-                } catch (_: IllegalStateException) { /* no-op */
-                }
-
-                val processCameraProvider =
-                    ProcessCameraProvider.awaitInstance(event.appContext).also { it.unbindAll() }
-
-                try {
-                    camera = processCameraProvider.bindToLifecycle(
-                        event.lifecycleOwner,
-                        DEFAULT_BACK_CAMERA,
-                        getCameraPreviewUseCase(),
-                        imageAnalysisUseCase
-                    ).apply {
-                        configureAutoFocus(event.windowInfo)
-                    }
-                } catch (exception: Exception) {
-                    if (exception !is IllegalStateException &&
-                        exception !is IllegalArgumentException &&
-                        exception !is UnsupportedOperationException &&
-                        exception !is CameraInfoUnavailableException
-                    ) {
-                        throw exception
-                    }
-
-                    cleanUpCameraResources(
-                        imageAnalysisUseCase,
-                        processCameraProvider,
-                        cameraExecutor
-                    )
-                    backendEventsChannel.send(
-                        DisableAlarmScannerScreenBackendEvent.CameraInitializationError
-                    )
-                }
-
-                try {
-                    awaitCancellation()
-                } finally {
-                    cleanUpCameraResources(
-                        imageAnalysisUseCase,
-                        processCameraProvider,
-                        cameraExecutor
-                    )
-                }
-            }
-
-            is DisableAlarmScannerScreenUserEvent.ToggleFlash -> {
-                camera?.let {
-                    _state.update { currentState ->
-                        val flashEnabled = !currentState.isFlashEnabled
-                        it.cameraControl.enableTorch(flashEnabled)
-                        currentState.copy(isFlashEnabled = flashEnabled)
-                    }
-                }
-            }
-
-            else -> { /* no-op */
+        if (event is DisableAlarmScannerScreenUserEvent.ToggleFlash) {
+            camera?.takeIf { it.cameraInfo.hasFlashUnit() }?.let { activeCamera ->
+                val enabled = !state.value.isFlashEnabled
+                activeCamera.cameraControl.enableTorch(enabled)
+                _state.update { it.copy(isFlashEnabled = enabled) }
             }
         }
     }
 
-    private fun cleanUpCameraResources(
-        imageAnalysisUseCase: ImageAnalysis,
-        processCameraProvider: ProcessCameraProvider,
-        cameraExecutor: ExecutorService?
-    ) {
-        turnOffFlash()
-        imageAnalysisUseCase.clearAnalyzer()
-        processCameraProvider.unbindAll()
-        camera = null
-        cameraExecutor?.let { if (!it.isShutdown) it.shutdownNow() }
-    }
-
-    private fun getCodeAnalyzer(): ImageAnalysis.Analyzer {
-        return ZXingCodeAnalyzer(getBarcodeDetector())
-    }
-
-    private fun getBarcodeDetector(): CodeDetector =
-        object : CodeDetector {
-            override fun onCodeFound(codeValue: String, hasStrongErrorCorrection: Boolean) {
-                if (shouldScan && ::alarm.isInitialized) {
-                    shouldScan = false
-
-                    viewModelScope.launch {
-                        if (alarm.assignedCode == null) {
-                            disableAlarm(codeValue)
-                        } else {
-                            if (codeValue == alarm.assignedCode?.value) {
-                                disableAlarm(codeValue)
-                            } else {
-                                showIncorrectCodeWarning()
-
-                                shouldScan = true
-                            }
-                        }
-                    }
+    private fun getBarcodeDetector(session: Int): CodeDetector = object : CodeDetector {
+        override fun onCodeFound(codeValue: String, hasStrongErrorCorrection: Boolean) {
+            if (cameraSession.get() != session || !shouldScan.compareAndSet(true, false)) return
+            viewModelScope.launch {
+                if (cameraSession.get() != session) return@launch
+                if (alarm.assignedCode == null || codeValue == alarm.assignedCode?.value) {
+                    completeChallenge(codeValue)
+                } else {
+                    showIncorrectCodeWarning()
+                    if (cameraSession.get() == session && !challengeCompleted.get()) shouldScan.set(true)
                 }
             }
-
-            override fun onError(exception: Exception) {
-                Log.e("BarcodeDetector", exception.toString())
-            }
         }
+        override fun onError(exception: Exception) {
+            Log.e("BarcodeDetector", exception.toString())
+        }
+    }
 
     private fun getCameraPreviewUseCase() =
-        Preview.Builder().build().apply {
+        Preview.Builder().apply {
+            if (alarm.dismissalMethod == DismissalMethod.OBJECT) {
+                setResolutionSelector(ResolutionSelector.Builder().setResolutionStrategy(
+                    ResolutionStrategy(Size(640, 480), ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER)
+                ).build())
+            }
+        }.build().apply {
             setSurfaceProvider { newSurfaceRequest ->
                 _state.update { currentState ->
                     currentState.copy(surfaceRequest = newSurfaceRequest)
@@ -207,12 +207,18 @@ class DisableAlarmScannerViewModel @AssistedInject constructor(
 
     private fun getImageAnalysisUseCase() =
         ImageAnalysis.Builder().apply {
-            setResolutionSelector(ResolutionSelector.Builder().build())
+            setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+            if (alarm.dismissalMethod == DismissalMethod.OBJECT) {
+                setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
+                setResolutionSelector(ResolutionSelector.Builder().setResolutionStrategy(
+                    ResolutionStrategy(Size(640, 480), ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER)
+                ).build())
+            } else setResolutionSelector(ResolutionSelector.Builder().build())
 
             // Android 13 ImageWriter double-closes buffer fences in the frame rotation path,
             // crashing PowerVR devices - this got fixed in Android 14
             // https://android.googlesource.com/platform/frameworks/base/+/1165c90081ab1ae67b74fffff2c604573b3bde45
-            if (Build.VERSION.SDK_INT != Build.VERSION_CODES.TIRAMISU) {
+            if (alarm.dismissalMethod == DismissalMethod.CODE && Build.VERSION.SDK_INT != Build.VERSION_CODES.TIRAMISU) {
                 setOutputImageRotationEnabled(true)
             }
         }.build()
@@ -239,7 +245,8 @@ class DisableAlarmScannerViewModel @AssistedInject constructor(
         }
     }
 
-    private suspend fun disableAlarm(scannedCodeText: String) {
+    private suspend fun completeChallenge(scannedCodeText: String?) {
+        if (!challengeCompleted.compareAndSet(false, true)) return
         alarmsRepository.setAlarmSnoozed(
             alarmId = idOfAlarm,
             snoozed = false
@@ -254,14 +261,14 @@ class DisableAlarmScannerViewModel @AssistedInject constructor(
         }
 
         handleAlarmRescheduling()
-        sendCorrectCodeScannedConfirmation(scannedCodeText)
+        sendChallengeCompletedConfirmation(scannedCodeText)
     }
 
-    private suspend fun sendCorrectCodeScannedConfirmation(scannedCodeText: String) {
+    private suspend fun sendChallengeCompletedConfirmation(scannedCodeText: String?) {
         backendEventsChannel.send(
-            DisableAlarmScannerScreenBackendEvent.CorrectCodeScanned(
+            DisableAlarmScannerScreenBackendEvent.ChallengeCompleted(
                 uriStringToOpen =
-                    if (alarm.isOpenCodeLinkEnabled) scannedCodeText else null
+                    if (alarm.dismissalMethod == DismissalMethod.CODE && alarm.isOpenCodeLinkEnabled) scannedCodeText else null
             )
         )
     }
