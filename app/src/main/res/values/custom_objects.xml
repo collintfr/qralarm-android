@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
     <string name="dismissal_custom_object">Show my own item</string>
-    <string name="custom_object_description">Photograph a specific item, like your medication bottle. Only that item, with its label, stops the alarm.</string>
+    <string name="custom_object_description">Photograph the label of a specific item, like your medication bottle. The alarm stops when the camera reads enough of that label\'s words.</string>
     <string name="choose_custom_object">Choose items</string>
     <string name="custom_object_done">Done</string>
     <string name="custom_object_all_required">Show every one of these items, in any order, to stop the alarm.</string>
@@ -11,19 +11,19 @@
     <string name="custom_object_none_yet">No items yet.</string>
     <string name="custom_object_add_title">Add item</string>
     <string name="custom_object_retake_title">Retake photos</string>
-    <string name="custom_object_capture_instructions">Hold the item so its label fills the white square. Tap Record and slowly turn the item for 5 seconds, showing every side you might show when the alarm rings. You can also add single photos. The background is ignored.</string>
+    <string name="custom_object_capture_instructions">Hold the item so its label fills the white square. Tap Record and slowly turn the item for 5 seconds so the whole label is read, or take single photos. Only the words on the label are used; the background doesn\'t matter.</string>
     <string name="custom_object_photo_count">Photos: %1$d (need %2$d–%3$d)</string>
-    <string name="custom_object_clip_plain_sides">Some sides had too little printed detail and were skipped. When the alarm rings, show a side with the label or other print.</string>
+    <string name="custom_object_no_text">No text was read. Fill the square with the label, in good light, and hold steady.</string>
+    <string name="custom_object_keywords_title">Words this item will be recognized by</string>
+    <string name="custom_object_keywords_none">No word was read in more than one photo yet. Add more photos of the label.</string>
+    <string name="custom_object_keywords_not_enough">Need at least 3 words, including one of 6 or more letters. Add photos of other parts of the label.</string>
+    <string name="custom_object_remove_keyword">Remove %1$s</string>
     <string name="custom_object_record">Record while turning (5 s)</string>
     <string name="custom_object_recording">Recording… keep turning the item slowly.</string>
-    <string name="custom_object_clip_empty">No usable frames: keep the label inside the square, in good light, and move slowly.</string>
-    <string name="custom_object_shot_blurry">That photo was blurry. Hold still and try again.</string>
-    <string name="custom_object_shot_no_detail">Not enough printed detail. Turn the label towards the camera and fill the square.</string>
-    <string name="custom_object_shots_inconsistent">%1$d photo(s) didn\'t look like the same item and were removed. Retake them showing the same label.</string>
     <string name="custom_object_remove_photo">Remove photo</string>
     <string name="custom_object_take_photo">Take photo</string>
     <string name="custom_object_continue">Continue</string>
-    <string name="custom_object_test_instructions">Test it: show the item to the camera like you will when the alarm rings.</string>
+    <string name="custom_object_test_instructions">Test it: show the label to the camera like you will when the alarm rings.</string>
     <string name="custom_object_test_passed">Recognized. Name it and save.</string>
     <string name="custom_object_name">Name</string>
     <string name="custom_object_name_required">Enter a name.</string>
@@ -35,6 +35,7 @@
     <string name="my_objects">My items</string>
     <string name="my_objects_used_by">Used by %1$d alarm(s)</string>
     <string name="my_objects_rename">Rename</string>
+    <string name="my_objects_needs_new_photos">Needs new photos: items are now recognized by their label text. Tap the camera to retake.</string>
     <string name="my_objects_delete_title">Delete %1$s?</string>
     <string name="my_objects_delete_in_use">%1$d alarm(s) use this item. It will be removed from them; an alarm left with no items will switch to the stop button.</string>
     <string name="custom_object_alarm_summary">Items: %1$s</string>

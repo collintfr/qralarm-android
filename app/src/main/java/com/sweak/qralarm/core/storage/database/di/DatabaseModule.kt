@@ -35,7 +35,8 @@ object DatabaseModule {
                 QRAlarmDatabase.MIGRATION_8_9,
                 QRAlarmDatabase.MIGRATION_9_10,
                 QRAlarmDatabase.MIGRATION_10_11,
-                QRAlarmDatabase.MIGRATION_11_12
+                QRAlarmDatabase.MIGRATION_11_12,
+                QRAlarmDatabase.MIGRATION_12_13
             )
             .build()
 

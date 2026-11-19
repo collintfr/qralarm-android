@@ -26,8 +26,8 @@ import com.sweak.qralarm.core.domain.recognition.ObjectCategories
 import com.sweak.qralarm.core.ui.components.code_scanner.analyzer.CodeDetector
 import com.sweak.qralarm.core.ui.components.code_scanner.analyzer.ZXingCodeAnalyzer
 import com.sweak.qralarm.core.domain.custom_object.CustomObjectsRepository
-import com.sweak.qralarm.core.ui.components.object_scanner.CustomObjectAnalyzer
-import com.sweak.qralarm.core.ui.components.object_scanner.CustomObjectTarget
+import com.sweak.qralarm.core.ui.components.object_scanner.LabelTextAnalyzer
+import com.sweak.qralarm.core.ui.components.object_scanner.LabelTextTarget
 import com.sweak.qralarm.core.ui.components.object_scanner.ObjectAnalyzer
 import com.sweak.qralarm.core.ui.components.object_scanner.ObjectDetectionBox
 import dagger.assisted.Assisted
@@ -129,14 +129,12 @@ class DisableAlarmScannerViewModel @AssistedInject constructor(
                 }
                 val targets = alarm.customObjectIds.map { id ->
                     val customObject = requireNotNull(customObjectsRepository.getObject(id))
-                    CustomObjectTarget(
-                        id,
-                        requireNotNull(customObjectsRepository.loadReferenceFeatures(id)),
-                        customObject.embeddingThreshold
-                    )
+                    // Items added before text recognition have no keywords: they need new photos.
+                    require(!customObject.needsNewPhotos) { "${customObject.name} needs new photos" }
+                    LabelTextTarget(id, customObject.keywords)
                 }
-                CustomObjectAnalyzer(
-                    event.appContext, targets,
+                LabelTextAnalyzer(
+                    targets,
                     onResult = { box, progress, confirmedIds, allDone ->
                         viewModelScope.launch {
                             if (cameraSession.get() == session && shouldScan.get()) {
@@ -155,7 +153,7 @@ class DisableAlarmScannerViewModel @AssistedInject constructor(
                         onObjectResult(box, progress, allDone)
                     },
                     onError = { exception ->
-                        Log.e("CustomObjectAnalyzer", "Recognition failed", exception)
+                        Log.e("LabelTextAnalyzer", "Recognition failed", exception)
                         viewModelScope.launch {
                             if (cameraSession.get() == session) {
                                 _state.update { it.copy(recognitionError = true, detectionBox = null, confirmationProgress = 0f) }
@@ -250,11 +248,15 @@ class DisableAlarmScannerViewModel @AssistedInject constructor(
         }
     }
 
+    /** Label text needs more pixels than object detection. */
+    private fun analysisSize() =
+        if (alarm.dismissalMethod == DismissalMethod.CUSTOM_OBJECT) Size(1280, 720) else Size(640, 480)
+
     private fun getCameraPreviewUseCase() =
         Preview.Builder().apply {
             if (alarm.dismissalMethod.isObject) {
                 setResolutionSelector(ResolutionSelector.Builder().setResolutionStrategy(
-                    ResolutionStrategy(Size(640, 480), ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER)
+                    ResolutionStrategy(analysisSize(), ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER)
                 ).build())
             }
         }.build().apply {
@@ -269,9 +271,12 @@ class DisableAlarmScannerViewModel @AssistedInject constructor(
         ImageAnalysis.Builder().apply {
             setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
             if (alarm.dismissalMethod.isObject) {
-                setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
+                // ML Kit reads the camera's YUV frames directly; object detection needs RGBA.
+                if (alarm.dismissalMethod == DismissalMethod.OBJECT) {
+                    setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
+                }
                 setResolutionSelector(ResolutionSelector.Builder().setResolutionStrategy(
-                    ResolutionStrategy(Size(640, 480), ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER)
+                    ResolutionStrategy(analysisSize(), ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER)
                 ).build())
             } else setResolutionSelector(ResolutionSelector.Builder().build())
 

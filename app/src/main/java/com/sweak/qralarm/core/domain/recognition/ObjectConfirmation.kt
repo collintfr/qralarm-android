@@ -69,12 +69,13 @@ class ObjectConfirmation(private val policy: ConfirmationPolicy = COCO_POLICY) {
         )
 
         /**
-         * Custom objects pass a per-frame geometric check, so confidence is 1 or absent. One
-         * missed frame is tolerated: on the evaluation sets this added no false dismissals.
+         * Label text: a frame counts when enough keywords are read in it. Reading text is slower
+         * than detection (a few frames a second), so 3 of the last 5 frames confirm, tolerating a
+         * frame where the label was blurred or turned away.
          */
-        val CUSTOM_OBJECT_POLICY = ConfirmationPolicy(
-            minConfidence = 0.5f, requiredMatches = 4, minSpanMillis = 400L, maxFrameGapMillis = 700L,
-            windowFrames = 6
+        val LABEL_TEXT_POLICY = ConfirmationPolicy(
+            minConfidence = 0.5f, requiredMatches = 3, minSpanMillis = 300L, maxFrameGapMillis = 1500L,
+            windowFrames = 5
         )
     }
 }

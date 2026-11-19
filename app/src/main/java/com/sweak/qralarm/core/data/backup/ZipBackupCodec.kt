@@ -143,8 +143,8 @@ class ZipBackupCodec @Inject constructor(
                             zipFile.getEntry(customObjectEntryName(dto.objectId, name))
                                 ?.let { entry -> name to zipFile.getInputStream(entry).use { it.readBytes() } }
                         }.toMap()
-                    // Without its feature files an item cannot be recognized; leave it out.
-                    dto.toBackupCustomObject(files).takeIf { files.keys.any { it.endsWith(".feat") } }
+                    // Older backups also carry feature files; only the photos are kept.
+                    dto.toBackupCustomObject(files.filterKeys { it.endsWith(".jpg") })
                 }
 
                 return ZipBackupReader(
