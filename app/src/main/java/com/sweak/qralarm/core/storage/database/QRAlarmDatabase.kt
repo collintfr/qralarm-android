@@ -7,13 +7,24 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.sweak.qralarm.core.storage.database.dao.AlarmsDao
 import com.sweak.qralarm.core.storage.database.dao.CodesDao
+import com.sweak.qralarm.core.storage.database.dao.CustomObjectsDao
+import com.sweak.qralarm.core.storage.database.dao.EmergencyExplanationsDao
+import com.sweak.qralarm.core.storage.database.model.AlarmCustomObjectEntity
 import com.sweak.qralarm.core.storage.database.model.AlarmEntity
 import com.sweak.qralarm.core.storage.database.model.CodeEntity
+import com.sweak.qralarm.core.storage.database.model.CustomObjectEntity
+import com.sweak.qralarm.core.storage.database.model.EmergencyExplanationEntity
 
-const val QRALARM_DATABASE_VERSION = 11
+const val QRALARM_DATABASE_VERSION = 12
 
 @Database(
-    entities = [AlarmEntity::class, CodeEntity::class],
+    entities = [
+        AlarmEntity::class,
+        CodeEntity::class,
+        CustomObjectEntity::class,
+        AlarmCustomObjectEntity::class,
+        EmergencyExplanationEntity::class
+    ],
     version = QRALARM_DATABASE_VERSION,
     exportSchema = true,
     autoMigrations = [
@@ -27,8 +38,55 @@ const val QRALARM_DATABASE_VERSION = 11
 abstract class QRAlarmDatabase : RoomDatabase() {
     abstract fun alarmsDao(): AlarmsDao
     abstract fun codesDao(): CodesDao
+    abstract fun customObjectsDao(): CustomObjectsDao
+    abstract fun emergencyExplanationsDao(): EmergencyExplanationsDao
 
     companion object {
+        val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `custom_object` (
+                        `objectId` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `createdAtMillis` INTEGER NOT NULL,
+                        `referenceCount` INTEGER NOT NULL,
+                        `embeddingThreshold` REAL NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `emergency_explanation` (
+                        `explanationId` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `alarmId` INTEGER,
+                        `alarmLabel` TEXT,
+                        `alarmHourOfDay` INTEGER,
+                        `alarmMinute` INTEGER,
+                        `dismissalSummary` TEXT,
+                        `createdAtMillis` INTEGER NOT NULL,
+                        `text` TEXT NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `alarm_custom_object` (
+                        `alarmId` INTEGER NOT NULL,
+                        `objectId` INTEGER NOT NULL,
+                        `position` INTEGER NOT NULL,
+                        PRIMARY KEY(`alarmId`, `objectId`),
+                        FOREIGN KEY(`alarmId`) REFERENCES `alarm`(`alarmId`) ON UPDATE NO ACTION ON DELETE CASCADE,
+                        FOREIGN KEY(`objectId`) REFERENCES `custom_object`(`objectId`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_alarm_custom_object_objectId` ON `alarm_custom_object` (`objectId`)"
+                )
+            }
+        }
+
         val MIGRATION_10_11 = object : Migration(10, 11) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(

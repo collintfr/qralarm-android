@@ -56,7 +56,10 @@ fun CodeScanner(
     objectName: String? = null,
     detectionBox: ObjectDetectionBox? = null,
     confirmationProgress: Float = 0f,
-    recognitionError: Boolean = false
+    recognitionError: Boolean = false,
+    isCustomObject: Boolean = false,
+    customObjectsShown: Int = 0,
+    customObjectsTotal: Int = 0
 ) {
     Box(modifier = modifier) {
         surfaceRequest?.let { request ->
@@ -90,7 +93,13 @@ fun CodeScanner(
                 shape = MaterialTheme.shapes.medium
             ) {
                 Column(Modifier.padding(16.dp)) {
-                    Text(stringResource(R.string.recognition_target, objectName))
+                    Text(stringResource(
+                        if (isCustomObject) R.string.recognition_target_custom else R.string.recognition_target,
+                        objectName
+                    ))
+                    if (customObjectsTotal > 1) {
+                        Text(stringResource(R.string.custom_object_progress, customObjectsShown, customObjectsTotal))
+                    }
                     if (recognitionError) Text(stringResource(R.string.recognition_error), color = MaterialTheme.colorScheme.error)
                     else {
                         if (confirmationProgress > 0f) Text(stringResource(R.string.recognition_progress))

@@ -1,5 +1,6 @@
 package com.sweak.qralarm.features.home
 
+import com.sweak.qralarm.core.domain.custom_object.CustomObjectsRepository
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.sweak.qralarm.alarm.QRAlarmManager
@@ -40,7 +41,8 @@ class HomeViewModel @Inject constructor(
     private val disableAlarm: DisableAlarm,
     private val canManipulateAlarm: CanManipulateAlarm,
     private val deleteAlarm: DeleteAlarm,
-    private val copyAlarm: CopyAlarm
+    private val copyAlarm: CopyAlarm,
+    private val customObjectsRepository: CustomObjectsRepository
 ) : ViewModel() {
 
     private var _state = MutableStateFlow(HomeScreenState())
@@ -148,6 +150,9 @@ class HomeViewModel @Inject constructor(
                 isAlarmEnabled = alarm.isAlarmEnabled,
                 dismissalMethod = alarm.dismissalMethod,
                 objectCategoryId = alarm.objectCategoryId,
+                customObjectName = alarm.customObjectIds
+                    .mapNotNull { customObjectsRepository.getObject(it)?.name }
+                    .joinToString(", "),
                 skipNextAlarmConfig = AlarmWrapper.SkipNextAlarmConfig(
                     isSkippingSupported =
                         alarmRepeatingScheduleWrapper.alarmRepeatingMode != ONLY_ONCE &&

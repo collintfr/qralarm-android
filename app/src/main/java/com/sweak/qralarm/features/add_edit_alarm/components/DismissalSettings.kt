@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
@@ -33,15 +34,23 @@ fun DismissalSettings(
     categoryId: String?,
     showSelectionError: Boolean,
     onMethodSelected: (DismissalMethod) -> Unit,
-    onObjectSelected: (String) -> Unit
+    onObjectSelected: (String) -> Unit,
+    customObjects: List<Pair<Long, String>> = emptyList(),
+    customObjectIds: List<Long> = emptyList(),
+    onCustomObjectToggled: (Long) -> Unit = {},
+    onAddCustomObject: () -> Unit = {}
 ) {
     var showPicker by rememberSaveable { mutableStateOf(false) }
+    var showCustomPicker by rememberSaveable { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
     fun selectMethod(option: DismissalMethod) {
         onMethodSelected(option)
         if (option == DismissalMethod.OBJECT) {
             query = ""
             showPicker = true
+        }
+        if (option == DismissalMethod.CUSTOM_OBJECT && customObjectIds.isEmpty()) {
+            if (customObjects.isEmpty()) onAddCustomObject() else showCustomPicker = true
         }
     }
     Column(Modifier.padding(16.dp)) {
@@ -56,6 +65,7 @@ fun DismissalSettings(
                     DismissalMethod.NONE -> R.string.dismissal_none
                     DismissalMethod.CODE -> R.string.use_qr_bar_code
                     DismissalMethod.OBJECT -> R.string.dismissal_object
+                    DismissalMethod.CUSTOM_OBJECT -> R.string.dismissal_custom_object
                 }))
             }
         }
@@ -69,6 +79,49 @@ fun DismissalSettings(
                 Text(stringResource(R.string.choose_object_required), color = MaterialTheme.colorScheme.error)
             }
         }
+        if (method == DismissalMethod.CUSTOM_OBJECT) {
+            TextButton(onClick = { showCustomPicker = true }) {
+                Text(
+                    customObjectIds.mapNotNull { id -> customObjects.firstOrNull { it.first == id }?.second }
+                        .takeIf { it.isNotEmpty() }?.joinToString(", ")
+                        ?: stringResource(R.string.choose_custom_object)
+                )
+            }
+            Text(stringResource(R.string.custom_object_description))
+            if (customObjectIds.size > 1) Text(stringResource(R.string.custom_object_all_required))
+            if (showSelectionError) {
+                Text(stringResource(R.string.choose_custom_object_required), color = MaterialTheme.colorScheme.error)
+            }
+        }
+    }
+    if (showCustomPicker) {
+        AlertDialog(
+            onDismissRequest = { showCustomPicker = false },
+            title = { Text(stringResource(R.string.choose_custom_object)) },
+            text = {
+                LazyColumn(Modifier.heightIn(max = 360.dp)) {
+                    if (customObjects.isEmpty()) item { Text(stringResource(R.string.custom_object_none_yet)) }
+                    items(customObjects, key = { it.first }) { (id, name) ->
+                        val checked = id in customObjectIds
+                        Row(
+                            Modifier.fillMaxWidth().clickable { onCustomObjectToggled(id) },
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Checkbox(checked = checked, onCheckedChange = { onCustomObjectToggled(id) })
+                            Text(name)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showCustomPicker = false; onAddCustomObject() }) {
+                    Text(stringResource(R.string.custom_object_add_new))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCustomPicker = false }) { Text(stringResource(R.string.custom_object_done)) }
+            }
+        )
     }
     if (showPicker) {
         AlertDialog(

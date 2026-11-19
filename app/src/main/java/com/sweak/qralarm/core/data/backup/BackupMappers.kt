@@ -5,12 +5,14 @@ import com.sweak.qralarm.core.data.backup.dto.AlarmDto
 import com.sweak.qralarm.core.data.backup.dto.AlarmsDto
 import com.sweak.qralarm.core.data.backup.dto.AppDto
 import com.sweak.qralarm.core.data.backup.dto.CodeDto
+import com.sweak.qralarm.core.data.backup.dto.CustomObjectDto
 import com.sweak.qralarm.core.data.backup.dto.IntRangeDto
 import com.sweak.qralarm.core.data.backup.dto.ManifestDto
 import com.sweak.qralarm.core.data.backup.dto.PreferencesDto
 import com.sweak.qralarm.core.domain.alarm.Alarm
 import com.sweak.qralarm.core.domain.backup.BackupAlarm
 import com.sweak.qralarm.core.domain.backup.BackupCode
+import com.sweak.qralarm.core.domain.backup.BackupCustomObject
 import com.sweak.qralarm.core.domain.backup.BackupFormatException
 import com.sweak.qralarm.core.domain.backup.BackupMetadata
 import com.sweak.qralarm.core.domain.backup.BackupPreferences
@@ -20,7 +22,7 @@ import com.sweak.qralarm.core.storage.database.model.AlarmEntity
 import com.sweak.qralarm.core.storage.database.model.CodeEntity
 import java.time.DayOfWeek
 
-fun AlarmEntity.toBackupAlarm(): BackupAlarm = BackupAlarm(
+fun AlarmEntity.toBackupAlarm(customObjectIds: List<Long> = emptyList()): BackupAlarm = BackupAlarm(
     alarmId = alarmId,
     alarmHourOfDay = alarmHourOfDay,
     alarmMinute = alarmMinute,
@@ -34,6 +36,7 @@ fun AlarmEntity.toBackupAlarm(): BackupAlarm = BackupAlarm(
     areVibrationsEnabled = areVibrationsEnabled,
     dismissalMethod = dismissalMethod,
     objectCategoryId = objectCategoryId,
+    customObjectIds = customObjectIds,
     assignedCodeId = assignedCodeId,
     isOpenCodeLinkEnabled = isOpenCodeLinkEnabled,
     cancelLockDurationInMinutes = cancelLockDurationInMinutes,
@@ -55,7 +58,7 @@ fun BackupCode.toCodeEntity(): CodeEntity = CodeEntity(
     name = name
 )
 
-fun BackupAlarm.toAlarmEntity(assignedCodeId: Long?): AlarmEntity = AlarmEntity(
+fun BackupAlarm.toAlarmEntity(assignedCodeId: Long?, restoredCustomObjectCount: Int = 0): AlarmEntity = AlarmEntity(
     alarmId = 0,
     alarmHourOfDay = alarmHourOfDay,
     alarmMinute = alarmMinute,
@@ -73,7 +76,8 @@ fun BackupAlarm.toAlarmEntity(assignedCodeId: Long?): AlarmEntity = AlarmEntity(
     customRingtoneUriString = null,
     alarmVolumePercentage = alarmVolumePercentage,
     areVibrationsEnabled = areVibrationsEnabled,
-    dismissalMethod = dismissalMethod,
+    // An item whose files did not come back with the backup cannot be shown: use the stop button.
+    dismissalMethod = if (dismissalMethod == "CUSTOM_OBJECT" && restoredCustomObjectCount == 0) "NONE" else dismissalMethod,
     objectCategoryId = objectCategoryId,
     assignedCodeId = assignedCodeId,
     isOpenCodeLinkEnabled = isOpenCodeLinkEnabled,
@@ -123,6 +127,7 @@ fun BackupAlarm.toAlarmDto(): AlarmDto = AlarmDto(
     areVibrationsEnabled = areVibrationsEnabled,
     dismissalMethod = dismissalMethod,
     objectCategoryId = objectCategoryId,
+    customObjectIds = customObjectIds,
     assignedCodeId = assignedCodeId,
     isOpenCodeLinkEnabled = isOpenCodeLinkEnabled,
     cancelLockDurationInMinutes = cancelLockDurationInMinutes,
@@ -152,6 +157,7 @@ fun AlarmDto.toBackupAlarm(): BackupAlarm = BackupAlarm(
     areVibrationsEnabled = areVibrationsEnabled,
     dismissalMethod = dismissalMethod ?: if (isUsingCode) "CODE" else "NONE",
     objectCategoryId = objectCategoryId,
+    customObjectIds = customObjectIds,
     assignedCodeId = assignedCodeId,
     isOpenCodeLinkEnabled = isOpenCodeLinkEnabled,
     cancelLockDurationInMinutes = cancelLockDurationInMinutes,
@@ -195,13 +201,37 @@ fun PreferencesDto.toBackupPreferences(): BackupPreferences = BackupPreferences(
     }
 )
 
+/** An alarm whose objects are absent is still readable; it then restores with the stop button. */
+private const val MISSING_CUSTOM_OBJECTS_TOLERATED = 1
+
+fun CustomObjectDto.toBackupCustomObject(files: Map<String, ByteArray>) = BackupCustomObject(
+    objectId = objectId,
+    name = name,
+    createdAtMillis = createdAtMillis,
+    embeddingThreshold = embeddingThreshold,
+    referenceCount = referenceCount,
+    files = files
+)
+
+fun BackupCustomObject.toCustomObjectDto() = CustomObjectDto(
+    objectId = objectId,
+    name = name,
+    createdAtMillis = createdAtMillis,
+    embeddingThreshold = embeddingThreshold,
+    referenceCount = referenceCount,
+    fileNames = files.keys.sorted()
+)
+
 /** How the alarm's repeating days are stored in one column, see AlarmsRepositoryImpl. */
 private const val REPEATING_ALARM_DAYS_SEPARATOR = ", "
 
 /** Decode and validate the complete archive before RestoreBackup cancels or replaces anything. */
 fun AlarmsDto.toValidatedBackupAlarms(formatVersion: Int): List<BackupAlarm> {
     val converted = alarms.map { it.toBackupAlarm() }
-    if (converted.any { !ObjectCategories.isValid(it.dismissalMethod, it.objectCategoryId) } ||
+    // A custom object that is missing from the archive is tolerated: the alarm falls back to NONE.
+    if (converted.any {
+            !ObjectCategories.isValid(it.dismissalMethod, it.objectCategoryId, it.customObjectIds.size.coerceAtLeast(MISSING_CUSTOM_OBJECTS_TOLERATED))
+        } ||
         (formatVersion >= 2 && alarms.any { it.dismissalMethod == null })
     ) throw BackupFormatException.NotAQRAlarmBackup()
     return converted
