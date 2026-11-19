@@ -30,6 +30,7 @@
     <string name="custom_object_retake">Retake photos</string>
     <string name="custom_object_save">Save</string>
     <string name="custom_object_save_failed">The item could not be saved.</string>
+    <string name="custom_object_processing_error">That photo could not be processed. Try again. (%1$s)</string>
     <string name="custom_object_camera_error">The camera could not start. Close this screen and try again.</string>
     <string name="my_objects">My items</string>
     <string name="my_objects_used_by">Used by %1$d alarm(s)</string>

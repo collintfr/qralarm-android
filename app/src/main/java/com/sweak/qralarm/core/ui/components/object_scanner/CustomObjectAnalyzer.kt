@@ -59,7 +59,14 @@ class CustomObjectAnalyzer(
                 ImageEmbedderEngine.ensureOpenCv()
                 extractor = KeypointExtractor(KeypointExtractor.FRAME_FEATURES)
                 if (targets.any { t -> t.references.any { it.embedding.isNotEmpty() } }) {
-                    embedder = ImageEmbedderEngine(context)
+                    // Optional pre-filter: without it every frame simply goes to the geometric check.
+                    embedder = try {
+                        ImageEmbedderEngine(context)
+                    } catch (throwable: Throwable) {
+                        if (throwable is VirtualMachineError) throw throwable
+                        android.util.Log.w("CustomObjectAnalyzer", "Image embedder unavailable", throwable)
+                        null
+                    }
                 }
                 targets.map { Live(it, CustomObjectRecognizer(it.references, it.embeddingThreshold)) }
                     .also { live = it }
@@ -70,7 +77,16 @@ class CustomObjectAnalyzer(
                 Matrix().apply { postRotate(frameRotation.toFloat()) }, true
             )
             upright = rotated
-            val embeddings = embedder?.let { e -> frameEmbeddings(e, rotated) }
+            val embeddings = embedder?.let { e ->
+                try {
+                    frameEmbeddings(e, rotated)
+                } catch (exception: Exception) {
+                    android.util.Log.w("CustomObjectAnalyzer", "Embedding failed; skipping the pre-filter", exception)
+                    e.close()
+                    embedder = null
+                    null
+                }
+            }
             val color = Mat().also { rgba = it }
             Utils.bitmapToMat(rotated, color)
             val grayFull = Mat()
