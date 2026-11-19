@@ -84,6 +84,13 @@ fun MyObjectsScreen(
                             stringResource(R.string.my_objects_used_by, row.alarmsUsing),
                             style = MaterialTheme.typography.bodySmall
                         )
+                        if (row.item.needsNewPhotos) {
+                            Text(
+                                stringResource(R.string.my_objects_needs_new_photos),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
                     }
                     IconButton(onClick = { viewModel.requestRename(row) }) {
                         Icon(QRAlarmIcons.Edit, stringResource(R.string.my_objects_rename))

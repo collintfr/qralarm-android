@@ -10,6 +10,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -24,6 +26,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.InputChip
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -53,7 +56,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import com.sweak.qralarm.R
 import com.sweak.qralarm.core.designsystem.icon.QRAlarmIcons
-import com.sweak.qralarm.core.recognition.custom.EnrollmentRules
 import com.sweak.qralarm.core.ui.compose_util.ObserveAsEvents
 import kotlin.math.min
 
@@ -93,13 +95,14 @@ fun EnrollObjectScreen(
         onCapture = viewModel::onCaptureClicked,
         onRecord = viewModel::onRecordClicked,
         onRemoveShot = viewModel::onRemoveShot,
+        onRemoveKeyword = viewModel::onRemoveKeyword,
         onContinue = { viewModel.onContinueClicked() },
         onBackToCapture = viewModel::onBackToCaptureClicked,
         onSave = { viewModel.onSaveClicked() }
     )
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun EnrollObjectContent(
     state: EnrollObjectScreenState,
@@ -108,6 +111,7 @@ private fun EnrollObjectContent(
     onCapture: () -> Unit,
     onRecord: () -> Unit,
     onRemoveShot: (Int) -> Unit,
+    onRemoveKeyword: (String) -> Unit,
     onContinue: () -> Unit,
     onBackToCapture: () -> Unit,
     onSave: () -> Unit
@@ -146,7 +150,7 @@ private fun EnrollObjectContent(
                 Canvas(Modifier.fillMaxSize()) {
                     if (!isTest) {
                         // Same square the analysis crops: GUIDE_BOX_FRACTION of the short side.
-                        val side = min(size.width, size.height) * EnrollmentRules.GUIDE_BOX_FRACTION
+                        val side = min(size.width, size.height) * EnrollmentAnalyzer.GUIDE_BOX_FRACTION
                         drawRect(
                             Color.White,
                             Offset((size.width - side) / 2, (size.height - side) / 2),
@@ -181,26 +185,11 @@ private fun EnrollObjectContent(
                 Text(stringResource(R.string.custom_object_capture_instructions))
                 Text(
                     stringResource(
-                        R.string.custom_object_photo_count, state.shots.size, EnrollmentRules.MIN_REFERENCES,
-                        EnrollmentRules.MAX_REFERENCES
+                        R.string.custom_object_photo_count, state.shots.size, EnrollmentAnalyzer.MIN_PHOTOS,
+                        EnrollmentAnalyzer.MAX_PHOTOS
                     ),
                     style = MaterialTheme.typography.labelLarge
                 )
-                state.shotIssue?.let { issue ->
-                    Text(
-                        stringResource(when (issue) {
-                            EnrollmentRules.ShotIssue.BLURRY -> R.string.custom_object_shot_blurry
-                            EnrollmentRules.ShotIssue.TOO_LITTLE_DETAIL -> R.string.custom_object_shot_no_detail
-                        }),
-                        color = MaterialTheme.colorScheme.error
-                    )
-                }
-                if (state.inconsistentShotsRemoved > 0) {
-                    Text(
-                        stringResource(R.string.custom_object_shots_inconsistent, state.inconsistentShotsRemoved),
-                        color = MaterialTheme.colorScheme.error
-                    )
-                }
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     itemsIndexed(state.shots) { index, shot ->
                         Box {
@@ -221,11 +210,36 @@ private fun EnrollObjectContent(
                 if (state.isRecording) {
                     Text(stringResource(R.string.custom_object_recording), color = MaterialTheme.colorScheme.primary)
                 }
-                if (state.clipSkippedPlainSides) {
-                    Text(stringResource(R.string.custom_object_clip_plain_sides))
+                if (state.noTextRead) {
+                    Text(stringResource(R.string.custom_object_no_text), color = MaterialTheme.colorScheme.error)
                 }
-                if (state.clipFoundNothing) {
-                    Text(stringResource(R.string.custom_object_clip_empty), color = MaterialTheme.colorScheme.error)
+                if (state.shots.isNotEmpty()) {
+                    Text(stringResource(R.string.custom_object_keywords_title), style = MaterialTheme.typography.titleSmall)
+                    if (state.keywords.isEmpty()) {
+                        Text(stringResource(R.string.custom_object_keywords_none))
+                    }
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        state.keywords.forEach { keyword ->
+                            InputChip(
+                                selected = false,
+                                onClick = { onRemoveKeyword(keyword) },
+                                label = { Text(keyword) },
+                                trailingIcon = {
+                                    Icon(
+                                        QRAlarmIcons.Close,
+                                        stringResource(R.string.custom_object_remove_keyword, keyword),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            )
+                        }
+                    }
+                    if (!state.keywordsUsable) {
+                        Text(stringResource(R.string.custom_object_keywords_not_enough), color = MaterialTheme.colorScheme.error)
+                    }
                 }
                 val busy = state.isCapturing || state.isRecording
                 Button(onClick = onRecord, enabled = state.canCaptureMore && !busy, modifier = Modifier.fillMaxWidth()) {

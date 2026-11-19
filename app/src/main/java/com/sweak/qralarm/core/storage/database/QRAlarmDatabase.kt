@@ -15,7 +15,7 @@ import com.sweak.qralarm.core.storage.database.model.CodeEntity
 import com.sweak.qralarm.core.storage.database.model.CustomObjectEntity
 import com.sweak.qralarm.core.storage.database.model.EmergencyExplanationEntity
 
-const val QRALARM_DATABASE_VERSION = 12
+const val QRALARM_DATABASE_VERSION = 13
 
 @Database(
     entities = [
@@ -42,6 +42,13 @@ abstract class QRAlarmDatabase : RoomDatabase() {
     abstract fun emergencyExplanationsDao(): EmergencyExplanationsDao
 
     companion object {
+        /** Items are now recognised by label text; existing items need new photos (no keywords). */
+        val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `custom_object` ADD COLUMN `keywords` TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         val MIGRATION_11_12 = object : Migration(11, 12) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(

@@ -14,12 +14,12 @@ data class BackupBundle(
     val customObjects: List<BackupCustomObject> = emptyList()
 )
 
-/** A user's own item: its metadata and its stored files (reference photos and features). */
+/** A user's own item: its metadata, label keywords and stored photos. */
 class BackupCustomObject(
     val objectId: Long,
     val name: String,
     val createdAtMillis: Long,
-    val embeddingThreshold: Float,
+    val keywords: List<String>,
     val referenceCount: Int,
     val files: Map<String, ByteArray>
 )

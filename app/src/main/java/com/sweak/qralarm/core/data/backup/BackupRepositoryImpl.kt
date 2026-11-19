@@ -29,7 +29,7 @@ class BackupRepositoryImpl @Inject constructor(
                 objectId = it.objectId,
                 name = it.name,
                 createdAtMillis = it.createdAtMillis,
-                embeddingThreshold = it.embeddingThreshold,
+                keywords = it.keywords.split("\n").filter { word -> word.isNotBlank() },
                 referenceCount = it.referenceCount,
                 files = customObjectFiles.readAllFiles(it.objectId)
             )
@@ -61,7 +61,8 @@ class BackupRepositoryImpl @Inject constructor(
                     name = backupObject.name,
                     createdAtMillis = backupObject.createdAtMillis,
                     referenceCount = backupObject.referenceCount,
-                    embeddingThreshold = backupObject.embeddingThreshold
+                    embeddingThreshold = 0f,
+                    keywords = backupObject.keywords.joinToString("\n")
                 )
             )
         }

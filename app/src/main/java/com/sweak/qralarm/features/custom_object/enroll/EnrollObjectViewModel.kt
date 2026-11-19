@@ -17,16 +17,13 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.sweak.qralarm.core.domain.custom_object.CustomObjectsRepository
-import com.sweak.qralarm.core.recognition.custom.CustomObjectRecognizer
-import com.sweak.qralarm.core.recognition.custom.EnrollmentRules
-import com.sweak.qralarm.core.ui.components.object_scanner.ImageEmbedderEngine
+import com.sweak.qralarm.core.recognition.text.LabelText
 import com.sweak.qralarm.core.ui.components.object_scanner.ObjectDetectionBox
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedFactory
 import dagger.assisted.AssistedInject
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -34,7 +31,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.util.concurrent.Executors
 
 data class EnrollObjectScreenState(
@@ -44,11 +40,10 @@ data class EnrollObjectScreenState(
     val shots: List<Bitmap> = emptyList(),
     val isCapturing: Boolean = false,
     val isRecording: Boolean = false,
-    val clipFoundNothing: Boolean = false,
-    /** Part of the recorded turn showed too little printed detail to be recognized. */
-    val clipSkippedPlainSides: Boolean = false,
-    val shotIssue: EnrollmentRules.ShotIssue? = null,
-    val inconsistentShotsRemoved: Int = 0,
+    /** The last photo or recording had no readable text. */
+    val noTextRead: Boolean = false,
+    /** Keywords chosen from the photos; the user can remove ones that are not on the item. */
+    val keywords: List<String> = emptyList(),
     val step: Step = Step.CAPTURE,
     val testProgress: Float = 0f,
     val testBox: ObjectDetectionBox? = null,
@@ -57,12 +52,14 @@ data class EnrollObjectScreenState(
     val showNameError: Boolean = false,
     /** Binding the camera failed. */
     val cameraError: Boolean = false,
-    /** Processing a photo failed; the message helps report the cause. Cleared on the next try. */
+    /** Reading a photo failed; the message helps report the cause. Cleared on the next try. */
     val processingError: String? = null
 ) {
     enum class Step { CAPTURE, TEST }
-    val canContinue: Boolean get() = shots.size >= EnrollmentRules.MIN_REFERENCES
-    val canCaptureMore: Boolean get() = shots.size < EnrollmentRules.MAX_REFERENCES
+
+    val keywordsUsable: Boolean get() = LabelText.isUsable(keywords)
+    val canContinue: Boolean get() = shots.size >= EnrollmentAnalyzer.MIN_PHOTOS && keywordsUsable
+    val canCaptureMore: Boolean get() = shots.size < EnrollmentAnalyzer.MAX_PHOTOS
 }
 
 sealed class EnrollObjectBackendEvent {
@@ -89,8 +86,8 @@ class EnrollObjectViewModel @AssistedInject constructor(
     val backendEvents = backendEventsChannel.receiveAsFlow()
 
     private val shots = mutableListOf<EnrollmentAnalyzer.Shot>()
+    private val removedKeywords = mutableSetOf<String>()
     private var analyzer: EnrollmentAnalyzer? = null
-    private var embeddingThreshold = EnrollmentRules.GATE_MIN
 
     init {
         if (objectIdToReplace != 0L) viewModelScope.launch {
@@ -103,9 +100,8 @@ class EnrollObjectViewModel @AssistedInject constructor(
     suspend fun runCamera(lifecycleOwner: LifecycleOwner) {
         val executor = Executors.newSingleThreadExecutor()
         val enrollmentAnalyzer = EnrollmentAnalyzer(
-            context,
-            onShot = { shot -> viewModelScope.launch { onShot(shot) } },
-            onClip = { clip, lowDetailShare -> viewModelScope.launch { onClip(clip, lowDetailShare) } },
+            onShot = { shot -> viewModelScope.launch { onShots(listOf(shot), fromClip = false) } },
+            onClip = { clip -> viewModelScope.launch { onShots(clip, fromClip = true) } },
             onTestResult = { box, progress, completed ->
                 viewModelScope.launch {
                     _state.update {
@@ -115,29 +111,25 @@ class EnrollObjectViewModel @AssistedInject constructor(
                 }
             },
             onError = { exception ->
-                Log.e("EnrollObject", "Analysis failed", exception)
+                Log.e("EnrollObject", "Reading failed", exception)
                 viewModelScope.launch {
-                    // A recording keeps going: one bad frame only drops that frame.
                     _state.update {
-                        it.copy(
-                            processingError = exception.message ?: exception.javaClass.simpleName,
-                            isCapturing = false
-                        )
+                        it.copy(processingError = exception.message ?: exception.javaClass.simpleName, isCapturing = false)
                     }
                 }
             }
         )
         analyzer = enrollmentAnalyzer
         if (state.value.step == EnrollObjectScreenState.Step.TEST && !state.value.isTestPassed) {
-            enrollmentAnalyzer.startTest(shots.map { it.reference.features }, embeddingThreshold)
+            enrollmentAnalyzer.startTest(state.value.keywords)
         }
         var provider: ProcessCameraProvider? = null
+        // Text needs more pixels than shape matching did.
         val resolution = ResolutionSelector.Builder().setResolutionStrategy(
-            ResolutionStrategy(Size(640, 480), ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER)
+            ResolutionStrategy(Size(1280, 720), ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER)
         ).build()
         val analysis = ImageAnalysis.Builder()
             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-            .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
             .setResolutionSelector(resolution)
             .build()
         try {
@@ -162,7 +154,7 @@ class EnrollObjectViewModel @AssistedInject constructor(
             analysis.clearAnalyzer()
             provider?.unbindAll()
             analyzer = null
-            _state.update { it.copy(surfaceRequest = null, isCapturing = false) }
+            _state.update { it.copy(surfaceRequest = null, isCapturing = false, isRecording = false) }
             executor.execute { enrollmentAnalyzer.close() }
             executor.shutdown()
         }
@@ -171,73 +163,53 @@ class EnrollObjectViewModel @AssistedInject constructor(
     fun onNameChanged(name: String) = _state.update { it.copy(name = name.take(40), showNameError = false) }
 
     fun onCaptureClicked() {
-        if (state.value.isCapturing || !state.value.canCaptureMore) return
-        _state.update {
-            it.copy(isCapturing = true, shotIssue = null, inconsistentShotsRemoved = 0, processingError = null)
-        }
+        if (state.value.isCapturing || state.value.isRecording || !state.value.canCaptureMore) return
+        _state.update { it.copy(isCapturing = true, noTextRead = false, processingError = null) }
         analyzer?.requestCapture()
     }
 
     fun onRecordClicked() {
         if (state.value.isCapturing || state.value.isRecording || !state.value.canCaptureMore) return
-        _state.update {
-            it.copy(
-                isRecording = true, shotIssue = null, inconsistentShotsRemoved = 0,
-                clipFoundNothing = false, clipSkippedPlainSides = false, processingError = null
-            )
-        }
+        _state.update { it.copy(isRecording = true, noTextRead = false, processingError = null) }
         analyzer?.requestClip()
-    }
-
-    private fun onClip(clip: List<EnrollmentAnalyzer.Shot>, lowDetailShare: Float) {
-        val room = EnrollmentRules.MAX_REFERENCES - shots.size
-        shots += clip.take(room.coerceAtLeast(0))
-        clip.drop(room.coerceAtLeast(0)).forEach { it.preview.recycle() }
-        _state.update {
-            it.copy(
-                isRecording = false,
-                clipFoundNothing = clip.isEmpty(),
-                clipSkippedPlainSides = clip.isNotEmpty() && lowDetailShare >= PLAIN_SIDE_HINT_SHARE
-            )
-        }
-        publishShots()
     }
 
     fun onRemoveShot(index: Int) {
         if (index !in shots.indices) return
-        shots.removeAt(index)
-        publishShots()
+        shots.removeAt(index).preview.recycle()
+        publish()
     }
 
-    private fun onShot(shot: EnrollmentAnalyzer.Shot) {
-        if (shot.issue == null && shots.size < EnrollmentRules.MAX_REFERENCES) shots += shot
-        _state.update { it.copy(isCapturing = false, shotIssue = shot.issue) }
-        publishShots()
+    fun onRemoveKeyword(keyword: String) {
+        removedKeywords += keyword
+        publish()
     }
 
-    private fun publishShots() = _state.update { it.copy(shots = shots.map { shot -> shot.preview }) }
+    private fun onShots(newShots: List<EnrollmentAnalyzer.Shot>, fromClip: Boolean) {
+        val readable = newShots.filter { it.tokens.isNotEmpty() }
+        newShots.filter { it.tokens.isEmpty() }.forEach { it.preview.recycle() }
+        val room = (EnrollmentAnalyzer.MAX_PHOTOS - shots.size).coerceAtLeast(0)
+        shots += readable.take(room)
+        readable.drop(room).forEach { it.preview.recycle() }
+        _state.update {
+            it.copy(
+                isCapturing = if (fromClip) it.isCapturing else false,
+                isRecording = if (fromClip) false else it.isRecording,
+                noTextRead = readable.isEmpty()
+            )
+        }
+        publish()
+    }
 
-    /** Drops photos that do not match the others; otherwise moves on to the live test. */
-    fun onContinueClicked() = viewModelScope.launch {
-        val features = shots.map { it.reference.features }
-        val inconsistent = withContext(Dispatchers.Default) {
-            ImageEmbedderEngine.ensureOpenCv()
-            EnrollmentRules.inconsistentReferences(features)
-        }
-        if (inconsistent.isNotEmpty()) {
-            inconsistent.sortedDescending().forEach { shots.removeAt(it) }
-            publishShots()
-            _state.update { it.copy(inconsistentShotsRemoved = inconsistent.size) }
-            return@launch
-        }
-        embeddingThreshold = withContext(Dispatchers.Default) {
-            val scenes = ImageEmbedderEngine.loadSceneEmbeddings(context)
-            EnrollmentRules.embeddingThreshold(features.map { reference ->
-                FloatArray(scenes.size) { CustomObjectRecognizer.cosine(reference.embedding, scenes[it]) }
-            })
-        }
+    private fun publish() {
+        val keywords = LabelText.selectKeywords(shots.map { it.tokens }).filter { it !in removedKeywords }
+        _state.update { it.copy(shots = shots.map { shot -> shot.preview }, keywords = keywords) }
+    }
+
+    fun onContinueClicked() {
+        if (!state.value.canContinue) return
         _state.update { it.copy(step = EnrollObjectScreenState.Step.TEST, testProgress = 0f, isTestPassed = false) }
-        analyzer?.startTest(features, embeddingThreshold)
+        analyzer?.startTest(state.value.keywords)
     }
 
     fun onBackToCaptureClicked() {
@@ -254,13 +226,13 @@ class EnrollObjectViewModel @AssistedInject constructor(
         if (!current.isTestPassed || current.isSaving) return@launch
         _state.update { it.copy(isSaving = true) }
         try {
-            val references = shots.map { it.reference }
+            val photos = shots.map { it.jpeg }
             val id = if (objectIdToReplace != 0L) {
-                repository.replaceReferences(objectIdToReplace, references, embeddingThreshold)
+                repository.replaceReferences(objectIdToReplace, photos, current.keywords)
                 repository.renameObject(objectIdToReplace, current.name)
                 objectIdToReplace
             } else {
-                repository.addObject(current.name, references, embeddingThreshold)
+                repository.addObject(current.name, photos, current.keywords)
             }
             backendEventsChannel.send(EnrollObjectBackendEvent.Saved(id))
         } catch (exception: Exception) {
@@ -269,7 +241,9 @@ class EnrollObjectViewModel @AssistedInject constructor(
             backendEventsChannel.send(EnrollObjectBackendEvent.SaveFailed)
         }
     }
-}
 
-/** Above this share of plain frames in a recorded turn, the user is told those sides won't work. */
-private const val PLAIN_SIDE_HINT_SHARE = 0.25f
+    override fun onCleared() {
+        shots.forEach { it.preview.recycle() }
+        shots.clear()
+    }
+}

@@ -13,7 +13,8 @@ data class CustomObjectDto(
     val objectId: Long = 0,
     val name: String = "",
     val createdAtMillis: Long = 0,
-    val embeddingThreshold: Float = 0.2f,
+    /** Label keywords; empty for items backed up before text recognition (they need new photos). */
+    val keywords: List<String> = emptyList(),
     val referenceCount: Int = 0,
     val fileNames: List<String> = emptyList()
 )

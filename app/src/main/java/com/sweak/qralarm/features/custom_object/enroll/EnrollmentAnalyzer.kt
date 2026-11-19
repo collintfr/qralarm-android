@@ -1,72 +1,56 @@
 package com.sweak.qralarm.features.custom_object.enroll
 
-import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Matrix
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
-import com.sweak.qralarm.core.domain.custom_object.CustomObjectReference
-import com.sweak.qralarm.core.recognition.custom.EnrollmentRules
-import com.sweak.qralarm.core.recognition.custom.KeypointExtractor
-import com.sweak.qralarm.core.recognition.custom.ReferenceBuilder
-import com.sweak.qralarm.core.recognition.custom.ReferenceFeatures
-import com.sweak.qralarm.core.ui.components.object_scanner.CustomObjectAnalyzer
-import com.sweak.qralarm.core.ui.components.object_scanner.CustomObjectTarget
-import com.sweak.qralarm.core.ui.components.object_scanner.ImageEmbedderEngine
+import com.sweak.qralarm.core.recognition.text.LabelText
+import com.sweak.qralarm.core.ui.components.object_scanner.LabelTextAnalyzer
+import com.sweak.qralarm.core.ui.components.object_scanner.LabelTextReader
+import com.sweak.qralarm.core.ui.components.object_scanner.LabelTextTarget
 import com.sweak.qralarm.core.ui.components.object_scanner.ObjectDetectionBox
-import org.opencv.android.Utils
-import org.opencv.core.Mat
-import org.opencv.imgproc.Imgproc
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.math.roundToInt
 
-/** Captures reference shots on request, and later runs the real recognizer as a test. */
+/**
+ * Reads the label inside the guide box on request (single photos or a recorded turn), and later
+ * runs the real alarm-time recogniser as a test.
+ */
 class EnrollmentAnalyzer(
-    private val context: Context,
     private val onShot: (Shot) -> Unit,
-    /** Sharp, usable frames picked from a recorded clip, at most one per time slice. */
-    private val onClip: (shots: List<Shot>, lowDetailShare: Float) -> Unit,
+    /** The best frame of each time slice of a recorded turn (most words read). */
+    private val onClip: (shots: List<Shot>) -> Unit,
     private val onTestResult: (ObjectDetectionBox?, Float, Boolean) -> Unit,
     private val onError: (Exception) -> Unit
 ) : ImageAnalysis.Analyzer, AutoCloseable {
 
-    class Shot(
-        val reference: CustomObjectReference,
-        val issue: EnrollmentRules.ShotIssue?,
-        val preview: Bitmap,
-        val sharpness: Double = 0.0
-    )
+    /** One photo of the label: the JPEG kept for thumbnails, and the words read in it. */
+    class Shot(val jpeg: ByteArray, val tokens: Set<String>, val preview: Bitmap)
 
     private val captureRequested = AtomicBoolean(false)
     private val recordRequested = AtomicBoolean(false)
     private var recordingStartMillis: Long? = null
     private val clipSlices = HashMap<Int, Shot>()
-    private var clipFrames = 0
-    private var clipLowDetailFrames = 0
-    private class Test(val references: List<ReferenceFeatures>, val embeddingThreshold: Float)
-    @Volatile private var test: Test? = null
-    private var tester: CustomObjectAnalyzer? = null
-    private var extractor: KeypointExtractor? = null
-    private var embedder: ImageEmbedderEngine? = null
-    /** The appearance pre-filter is optional: if it cannot run, enrollment continues without it. */
-    private var embedderUnavailable = false
+    @Volatile private var testKeywords: List<String>? = null
+    private var tester: LabelTextAnalyzer? = null
+    private var reader: LabelTextReader? = null
 
     fun requestCapture() = captureRequested.set(true)
 
     /** Records for [CLIP_MILLIS] while the user turns the item; see [onClip]. */
     fun requestClip() = recordRequested.set(true)
 
-    /** Runs exactly what the alarm will run; null references stop testing. */
-    fun startTest(references: List<ReferenceFeatures>?, embeddingThreshold: Float = 0f) {
-        test = references?.let { Test(it, embeddingThreshold) }
+    /** Runs exactly what the alarm will run; null stops testing. */
+    fun startTest(keywords: List<String>?) {
+        testKeywords = keywords
     }
 
     override fun analyze(image: ImageProxy) {
-        val currentTest = test
-        if (currentTest != null) {
-            val current = tester ?: CustomObjectAnalyzer(
-                context,
-                listOf(CustomObjectTarget(0L, currentTest.references, currentTest.embeddingThreshold)),
+        val keywords = testKeywords
+        if (keywords != null) {
+            val current = tester ?: LabelTextAnalyzer(
+                listOf(LabelTextTarget(0L, keywords)),
                 onResult = { box, progress, _, done -> onTestResult(box, progress, done) },
                 onError = onError
             ).also { tester = it }
@@ -78,8 +62,6 @@ class EnrollmentAnalyzer(
         if (recordRequested.compareAndSet(true, false)) {
             clipSlices.values.forEach { it.preview.recycle() }
             clipSlices.clear()
-            clipFrames = 0
-            clipLowDetailFrames = 0
             recordingStartMillis = image.imageInfo.timestamp / 1_000_000
         }
         val recordingStart = recordingStartMillis
@@ -88,23 +70,14 @@ class EnrollmentAnalyzer(
             if (now - recordingStart >= CLIP_MILLIS) {
                 recordingStartMillis = null
                 image.close()
-                onClip(
-                    clipSlices.toSortedMap().values.toList(),
-                    if (clipFrames == 0) 0f else clipLowDetailFrames.toFloat() / clipFrames
-                )
+                onClip(clipSlices.toSortedMap().values.toList())
                 clipSlices.clear()
                 return
             }
-            val shot = buildShot(image) ?: return
-            clipFrames++
-            if (shot.issue == EnrollmentRules.ShotIssue.TOO_LITTLE_DETAIL) clipLowDetailFrames++
-            if (shot.issue != null) {
-                shot.preview.recycle()
-                return
-            }
+            val shot = readShot(image) ?: return
             val slice = ((now - recordingStart) * CLIP_SLICES / CLIP_MILLIS).toInt()
             val kept = clipSlices[slice]
-            if (kept == null || shot.sharpness > kept.sharpness) {
+            if (shot.tokens.isNotEmpty() && (kept == null || shot.tokens.size > kept.tokens.size)) {
                 kept?.preview?.recycle()
                 clipSlices[slice] = shot
             } else {
@@ -116,53 +89,35 @@ class EnrollmentAnalyzer(
             image.close()
             return
         }
-        buildShot(image)?.let(onShot)
+        readShot(image)?.let(onShot)
     }
 
-    /** Crops, describes and checks one frame. Always closes [image]. */
-    private fun buildShot(image: ImageProxy): Shot? {
+    /** Crops the guide box and reads its text. Always closes [image]. */
+    private fun readShot(image: ImageProxy): Shot? {
         var source: Bitmap? = null
         var upright: Bitmap? = null
         try {
-            ImageEmbedderEngine.ensureOpenCv()
-            val frameRotation = image.imageInfo.rotationDegrees
+            val rotation = image.imageInfo.rotationDegrees
             val bitmap = image.toBitmap().also { source = it }
-            val rotated = if (frameRotation == 0) bitmap else Bitmap.createBitmap(
+            val rotated = if (rotation == 0) bitmap else Bitmap.createBitmap(
                 bitmap, 0, 0, bitmap.width, bitmap.height,
-                Matrix().apply { postRotate(frameRotation.toFloat()) }, true
+                Matrix().apply { postRotate(rotation.toFloat()) }, true
             )
             upright = rotated
-            val box = ReferenceBuilder.guideBox(rotated.width, rotated.height)
-            val cropped = Bitmap.createBitmap(rotated, box.x, box.y, box.width, box.height)
-            val side = ReferenceBuilder.REFERENCE_MAX_SIDE
-            val crop = if (cropped.width > side) Bitmap.createScaledBitmap(cropped, side, side, true)
-                .also { cropped.recycle() } else cropped
-            val embedding = embedOrNull(crop)
-            val rgba = Mat()
-            val gray = Mat()
-            Utils.bitmapToMat(crop, rgba)
-            Imgproc.cvtColor(rgba, gray, Imgproc.COLOR_RGBA2GRAY)
-            rgba.release()
-            val built = ReferenceBuilder.build(
-                gray, extractor ?: KeypointExtractor(KeypointExtractor.REFERENCE_FEATURES).also { extractor = it }, embedding
-            )
-            gray.release()
+            // Only the guide box is read, so text elsewhere in the room never becomes a keyword.
+            val side = (minOf(rotated.width, rotated.height) * GUIDE_BOX_FRACTION).roundToInt()
+            val crop = Bitmap.createBitmap(rotated, (rotated.width - side) / 2, (rotated.height - side) / 2, side, side)
+            val lines = (reader ?: LabelTextReader().also { reader = it }).read(crop)
+            val preview = if (crop.width > PREVIEW_SIDE) {
+                Bitmap.createScaledBitmap(crop, PREVIEW_SIDE, PREVIEW_SIDE, true).also { crop.recycle() }
+            } else crop
             val jpeg = ByteArrayOutputStream().use { out ->
-                crop.compress(Bitmap.CompressFormat.JPEG, 88, out)
+                preview.compress(Bitmap.CompressFormat.JPEG, 88, out)
                 out.toByteArray()
             }
-            return Shot(
-                CustomObjectReference(jpeg, built.features),
-                EnrollmentRules.checkShot(built.features, built.sharpness),
-                crop,
-                built.sharpness
-            )
+            return Shot(jpeg, LabelText.tokens(lines.map { it.text }), preview)
         } catch (exception: Exception) {
             onError(exception)
-            return null
-        } catch (error: LinkageError) {
-            // A native library that failed to load; reported like any other failure.
-            onError(IllegalStateException(error.message ?: error.javaClass.simpleName, error))
             return null
         } finally {
             if (upright !== source) upright?.recycle()
@@ -171,31 +126,22 @@ class EnrollmentAnalyzer(
         }
     }
 
-    private fun embedOrNull(bitmap: Bitmap): FloatArray? {
-        if (embedderUnavailable) return null
-        return try {
-            (embedder ?: ImageEmbedderEngine(context).also { embedder = it }).embed(bitmap)
-        } catch (throwable: Throwable) {
-            if (throwable is VirtualMachineError) throw throwable
-            android.util.Log.w("EnrollmentAnalyzer", "Image embedder unavailable; continuing without it", throwable)
-            embedderUnavailable = true
-            embedder?.close()
-            embedder = null
-            null
-        }
-    }
-
-    companion object {
-        const val CLIP_MILLIS = 5_000L
-        const val CLIP_SLICES = 8
-    }
-
     override fun close() {
         clipSlices.values.forEach { it.preview.recycle() }
         clipSlices.clear()
         tester?.close()
         tester = null
-        embedder?.close()
-        embedder = null
+        reader?.close()
+        reader = null
+    }
+
+    companion object {
+        const val CLIP_MILLIS = 5_000L
+        const val CLIP_SLICES = 8
+        /** Guide box: centred square, this share of the shorter image side. */
+        const val GUIDE_BOX_FRACTION = 0.7f
+        const val PREVIEW_SIDE = 480
+        const val MIN_PHOTOS = 2
+        const val MAX_PHOTOS = 10
     }
 }

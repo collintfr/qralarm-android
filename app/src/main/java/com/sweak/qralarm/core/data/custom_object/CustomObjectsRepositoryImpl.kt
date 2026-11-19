@@ -1,9 +1,7 @@
 package com.sweak.qralarm.core.data.custom_object
 
 import com.sweak.qralarm.core.domain.custom_object.CustomObject
-import com.sweak.qralarm.core.domain.custom_object.CustomObjectReference
 import com.sweak.qralarm.core.domain.custom_object.CustomObjectsRepository
-import com.sweak.qralarm.core.recognition.custom.ReferenceFeatures
 import com.sweak.qralarm.core.storage.database.dao.CustomObjectsDao
 import com.sweak.qralarm.core.storage.database.model.CustomObjectEntity
 import kotlinx.coroutines.Dispatchers
@@ -22,37 +20,34 @@ class CustomObjectsRepositoryImpl @Inject constructor(
 
     override suspend fun getObject(objectId: Long): CustomObject? = dao.getObject(objectId)?.toDomain()
 
-    override suspend fun addObject(
-        name: String,
-        references: List<CustomObjectReference>,
-        embeddingThreshold: Float
-    ): Long = withContext(Dispatchers.IO) {
-        val id = dao.insertObject(
-            CustomObjectEntity(
-                name = name.trim(),
-                createdAtMillis = System.currentTimeMillis(),
-                referenceCount = references.size,
-                embeddingThreshold = embeddingThreshold
+    override suspend fun addObject(name: String, photos: List<ByteArray>, keywords: List<String>): Long =
+        withContext(Dispatchers.IO) {
+            val id = dao.insertObject(
+                CustomObjectEntity(
+                    name = name.trim(),
+                    createdAtMillis = System.currentTimeMillis(),
+                    referenceCount = photos.size,
+                    embeddingThreshold = 0f,
+                    keywords = keywords.joinToString(KEYWORD_SEPARATOR)
+                )
             )
-        )
-        try {
-            files.write(id, references.map { it.jpeg }, references.map { it.features })
-        } catch (exception: Exception) {
-            dao.deleteObjectRow(id)
-            throw exception
+            try {
+                files.write(id, photos)
+            } catch (exception: Exception) {
+                dao.deleteObjectRow(id)
+                throw exception
+            }
+            id
         }
-        id
-    }
 
-    override suspend fun replaceReferences(
-        objectId: Long,
-        references: List<CustomObjectReference>,
-        embeddingThreshold: Float
-    ) = withContext(Dispatchers.IO) {
-        val existing = dao.getObject(objectId) ?: return@withContext
-        files.write(objectId, references.map { it.jpeg }, references.map { it.features })
-        dao.updateObject(existing.copy(referenceCount = references.size, embeddingThreshold = embeddingThreshold))
-    }
+    override suspend fun replaceReferences(objectId: Long, photos: List<ByteArray>, keywords: List<String>) =
+        withContext(Dispatchers.IO) {
+            val existing = dao.getObject(objectId) ?: return@withContext
+            files.write(objectId, photos)
+            dao.updateObject(
+                existing.copy(referenceCount = photos.size, keywords = keywords.joinToString(KEYWORD_SEPARATOR))
+            )
+        }
 
     override suspend fun renameObject(objectId: Long, name: String) {
         dao.getObject(objectId)?.let { dao.updateObject(it.copy(name = name.trim())) }
@@ -65,9 +60,6 @@ class CustomObjectsRepositoryImpl @Inject constructor(
 
     override suspend fun countAlarmsUsingObject(objectId: Long): Int = dao.countAlarmsUsingObject(objectId)
 
-    override suspend fun loadReferenceFeatures(objectId: Long): List<ReferenceFeatures>? =
-        withContext(Dispatchers.IO) { files.readFeatures(objectId) }
-
     override suspend fun loadReferenceJpegs(objectId: Long): List<ByteArray> =
         withContext(Dispatchers.IO) { files.readJpegs(objectId) }
 
@@ -76,6 +68,10 @@ class CustomObjectsRepositoryImpl @Inject constructor(
         name = name,
         createdAtMillis = createdAtMillis,
         referenceCount = referenceCount,
-        embeddingThreshold = embeddingThreshold
+        keywords = keywords.split(KEYWORD_SEPARATOR).filter { it.isNotBlank() }
     )
+
+    companion object {
+        const val KEYWORD_SEPARATOR = "\n"
+    }
 }

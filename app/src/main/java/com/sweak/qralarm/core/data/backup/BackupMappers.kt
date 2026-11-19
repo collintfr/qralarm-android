@@ -208,7 +208,7 @@ fun CustomObjectDto.toBackupCustomObject(files: Map<String, ByteArray>) = Backup
     objectId = objectId,
     name = name,
     createdAtMillis = createdAtMillis,
-    embeddingThreshold = embeddingThreshold,
+    keywords = keywords,
     referenceCount = referenceCount,
     files = files
 )
@@ -217,7 +217,7 @@ fun BackupCustomObject.toCustomObjectDto() = CustomObjectDto(
     objectId = objectId,
     name = name,
     createdAtMillis = createdAtMillis,
-    embeddingThreshold = embeddingThreshold,
+    keywords = keywords,
     referenceCount = referenceCount,
     fileNames = files.keys.sorted()
 )
