@@ -1,32 +1,33 @@
-# Custom-object recognition: evaluation results
+# Custom-item recognition: evaluation notes
 
-Thresholds in `GeometricVerifier.Params` were chosen from these runs (2026-11-18). Per-candidate
-match features were dumped by `CustomObjectEvaluationTest` and swept offline; the chosen point
-is the strictest one that kept most true views while producing zero false dismissals.
+## Current method: label text (ML Kit)
+Items are recognised by the words on their label (`core/recognition/text/LabelText.kt`).
+Enrollment keeps words read in at least 25% of the photos (and in two); at alarm time a frame
+counts when ≥ 3 keywords, ≥ 40% of all keywords and one keyword of ≥ 6 letters are read
+(fuzzy: 1 slip for 5–8 letters, 2 for longer), and 3 of the last 5 frames confirm.
 
-Chosen: min inliers 25, inlier ratio ≥ 0.20, inlier spread ≥ 0.12, coverage ≥ 0.05,
-photometric score ≥ 0.40, then 4 verified frames in a row (≥ 400 ms).
+`eval/ocr_cache.py` + `eval/text_match.py` prototype these rules with an open OCR engine
+(RapidOCR, PaddleOCR models), since ML Kit runs only on Android.
 
-| Set | Measure | Result |
-| --- | --- | --- |
-| Objectron, 40 enrolled instances (bottle, cereal box, book, cup) | False dismissals, other instances' clips (1,880 sequences) | **0** |
-| | False accepts, single frames (58,323) | **0** |
-| | True dismissal (later, partly unseen sides of the object) | 65% of clips |
-| GroceryStoreDataset, 24 enrolled products | False accepts, other brands, single photos | 0.01% |
-| | False accepts, same brand / other variant, single photos | 3.1% |
-| | True accepts, single in-shop photos (348 px) | 39% |
+| Set | Result (default rules) |
+| --- | --- |
+| Objectron, other objects' clips (1,128) | **0 false dismissals** (every setting tried) |
+| Objectron, enrollable instances | 24/48 (cups and many bottles show no readable text) |
+| Objectron, true dismissal within 3 s | 9/24 |
+| GroceryStoreDataset, other brands per photo | 0.04% |
+| GroceryStoreDataset, same brand / other variant per photo | 6.4% |
+| GroceryStoreDataset, true accepts per photo | 34% |
 
-What this means:
-- A different object of the same kind (another bottle, another box) did not dismiss an alarm in
-  any test. Objectron negatives never exceeded 20 matched points; true frames had a median of 94.
-- The weak spot is a sibling product of the same brand whose packaging differs only in a few
-  words or colours. Single photos were accepted 3% of the time; the app additionally needs four
-  matching frames in a row, which still photos cannot measure.
-- Recall on these sets is pessimistic: the grocery photos are small and taken at a distance in
-  shops, and Objectron test frames include sides that were never photographed at enrollment.
-  The user-captured set (`userCapturedItems`, see README) measures the real use case and
-  enforces ≥ 95% true dismissal within 3 s.
+**These public sets are a poor test of this method.** Objectron filmed objects from about a
+metre at 640 px and the grocery photos are 348 px, so labels are a few pixels tall: the OCR reads
+fragments ("urtel", "FLJT", "MELANLK"). The app reads a label held close at 1280×720, so recall
+there should be far higher; it has to be measured on real close-up recordings
+(`userCapturedItems` / `extract_frames.py`, see README). Same-brand variants that share most of
+their words remain the main risk; on the enrollment screen the user sees the keywords and can
+remove generic ones (e.g. the brand) so the distinguishing words decide.
 
-Appearance (embedding) pre-filter, from `embedding_gate.py`: passes ~100% of true frames; it
-removes 72% of other-object frames on Objectron and almost none on the grocery set, so it only
-saves computation.
+## Earlier method: keypoints (ORB, then SIFT + photometric check)
+Replaced because it depended on the background (the enrollment square included the table, whose
+texture became part of the reference) and was unreliable in practice. On Objectron with
+whole-turn enrollment SIFT reached 90.7% true dismissal with 0 false dismissals and 1.4% same-brand
+accepts per photo; the scripts are in git history (eval/variants.py, eval/analyze_variants.py).
