@@ -1,18 +1,22 @@
 package com.sweak.qralarm.features.add_edit_alarm.components
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Checkbox
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -25,6 +29,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.sweak.qralarm.R
+import com.sweak.qralarm.core.designsystem.component.QRAlarmCheckbox
+import com.sweak.qralarm.core.designsystem.component.QRAlarmRadioButton
+import com.sweak.qralarm.core.designsystem.icon.QRAlarmIcons
 import com.sweak.qralarm.core.domain.alarm.DismissalMethod
 import com.sweak.qralarm.core.domain.recognition.ObjectCategories
 
@@ -60,7 +67,7 @@ fun DismissalSettings(
                 Modifier.fillMaxWidth().clickable { selectMethod(option) },
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                RadioButton(selected = method == option, onClick = { selectMethod(option) })
+                QRAlarmRadioButton(selected = method == option, onClick = { selectMethod(option) })
                 Text(stringResource(when (option) {
                     DismissalMethod.NONE -> R.string.dismissal_none
                     DismissalMethod.CODE -> R.string.use_qr_bar_code
@@ -70,23 +77,22 @@ fun DismissalSettings(
             }
         }
         if (method == DismissalMethod.OBJECT) {
-            TextButton(onClick = { query = ""; showPicker = true }) {
-                Text(categoryId?.let(ObjectCategories::displayName)
-                    ?: stringResource(R.string.choose_object))
-            }
+            SelectionButton(
+                text = categoryId?.let(ObjectCategories::displayName) ?: stringResource(R.string.choose_object),
+                onClick = { query = ""; showPicker = true }
+            )
             Text(stringResource(R.string.object_recognition_description))
             if (showSelectionError) {
                 Text(stringResource(R.string.choose_object_required), color = MaterialTheme.colorScheme.error)
             }
         }
         if (method == DismissalMethod.CUSTOM_OBJECT) {
-            TextButton(onClick = { showCustomPicker = true }) {
-                Text(
-                    customObjectIds.mapNotNull { id -> customObjects.firstOrNull { it.first == id }?.second }
-                        .takeIf { it.isNotEmpty() }?.joinToString(", ")
-                        ?: stringResource(R.string.choose_custom_object)
-                )
-            }
+            val chosenNames = customObjectIds.mapNotNull { id -> customObjects.firstOrNull { it.first == id }?.second }
+            SelectionButton(
+                text = if (chosenNames.isEmpty()) stringResource(R.string.choose_custom_object)
+                else stringResource(R.string.custom_object_chosen, chosenNames.joinToString(", ")),
+                onClick = { showCustomPicker = true }
+            )
             Text(stringResource(R.string.custom_object_description))
             if (customObjectIds.size > 1) Text(stringResource(R.string.custom_object_all_required))
             if (showSelectionError) {
@@ -107,7 +113,7 @@ fun DismissalSettings(
                             Modifier.fillMaxWidth().clickable { onCustomObjectToggled(id) },
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Checkbox(checked = checked, onCheckedChange = { onCustomObjectToggled(id) })
+                            QRAlarmCheckbox(checked = checked, onCheckedChange = { onCustomObjectToggled(id) })
                             Text(name)
                         }
                     }
@@ -144,7 +150,7 @@ fun DismissalSettings(
                                 },
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                RadioButton(selected = categoryId == id, onClick = {
+                                QRAlarmRadioButton(selected = categoryId == id, onClick = {
                                     onObjectSelected(id)
                                     showPicker = false
                                 })
@@ -158,5 +164,20 @@ fun DismissalSettings(
                 TextButton(onClick = { showPicker = false }) { Text(stringResource(R.string.cancel)) }
             }
         )
+    }
+}
+
+/** A clearly visible button on the settings card; a plain text button blends into it. */
+@Composable
+private fun SelectionButton(text: String, onClick: () -> Unit) {
+    val contentColor = LocalContentColor.current
+    OutlinedButton(
+        onClick = onClick,
+        border = BorderStroke(1.dp, contentColor),
+        colors = ButtonDefaults.outlinedButtonColors(contentColor = contentColor),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+    ) {
+        Text(text, modifier = Modifier.weight(1f))
+        Icon(QRAlarmIcons.ForwardArrow, contentDescription = null, modifier = Modifier.size(16.dp))
     }
 }
