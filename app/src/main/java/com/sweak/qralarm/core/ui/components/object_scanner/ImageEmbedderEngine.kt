@@ -22,12 +22,20 @@ class ImageEmbedderEngine(context: Context) : AutoCloseable {
             .build()
     )
 
+    /**
+     * [bitmap] is left untouched. MediaPipe recycles the bitmap behind an image when the image is
+     * closed, so it is given a copy; handing it the caller's bitmap made the next read of that
+     * bitmap fail ("AndroidBitmap_lockPixels ... >= 0" in OpenCV).
+     */
     fun embed(bitmap: Bitmap): FloatArray {
-        val image = BitmapImageBuilder(bitmap).build()
+        val copy = bitmap.copy(Bitmap.Config.ARGB_8888, false)
+            ?: throw IllegalStateException("Could not copy the frame for the image embedder")
+        val image = BitmapImageBuilder(copy).build()
         try {
             return embedder.embed(image).embeddingResult().embeddings().first().floatEmbedding()
         } finally {
             image.close()
+            if (!copy.isRecycled) copy.recycle()
         }
     }
 
