@@ -3,6 +3,7 @@
     <string name="dismissal_custom_object">Show my own item</string>
     <string name="custom_object_description">Photograph the label of a specific item, like your medication bottle. The alarm stops when the camera reads enough of that label\'s words.</string>
     <string name="choose_custom_object">Choose items</string>
+    <string name="custom_object_chosen">Items: %1$s (tap to change)</string>
     <string name="custom_object_done">Done</string>
     <string name="custom_object_all_required">Show every one of these items, in any order, to stop the alarm.</string>
     <string name="custom_object_progress">%1$d of %2$d shown</string>

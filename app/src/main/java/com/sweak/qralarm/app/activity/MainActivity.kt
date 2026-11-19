@@ -39,8 +39,9 @@ class MainActivity : FragmentActivity() {
         splashScreen.setKeepOnScreenCondition { viewModel.state.value.shouldShowSplashScreen }
 
         lifecycleScope.launch {
+            // Runs in this block so it stops, with anything it queued, when the activity pauses.
             lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-                viewModel.onEvent(MainActivityUserEvent.ObserveActiveAlarms)
+                viewModel.observeActiveAlarms()
             }
         }
 
