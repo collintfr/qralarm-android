@@ -55,7 +55,10 @@ data class EnrollObjectScreenState(
     val isTestPassed: Boolean = false,
     val isSaving: Boolean = false,
     val showNameError: Boolean = false,
-    val cameraError: Boolean = false
+    /** Binding the camera failed. */
+    val cameraError: Boolean = false,
+    /** Processing a photo failed; the message helps report the cause. Cleared on the next try. */
+    val processingError: String? = null
 ) {
     enum class Step { CAPTURE, TEST }
     val canContinue: Boolean get() = shots.size >= EnrollmentRules.MIN_REFERENCES
@@ -114,7 +117,13 @@ class EnrollObjectViewModel @AssistedInject constructor(
             onError = { exception ->
                 Log.e("EnrollObject", "Analysis failed", exception)
                 viewModelScope.launch {
-                    _state.update { it.copy(cameraError = true, isCapturing = false, isRecording = false) }
+                    // A recording keeps going: one bad frame only drops that frame.
+                    _state.update {
+                        it.copy(
+                            processingError = exception.message ?: exception.javaClass.simpleName,
+                            isCapturing = false
+                        )
+                    }
                 }
             }
         )
@@ -142,6 +151,7 @@ class EnrollObjectViewModel @AssistedInject constructor(
                 setSurfaceProvider { request -> _state.update { it.copy(surfaceRequest = request) } }
             }
             cameraProvider.bindToLifecycle(lifecycleOwner, DEFAULT_BACK_CAMERA, preview, analysis)
+            _state.update { it.copy(cameraError = false) }
             awaitCancellation()
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             throw cancelled
@@ -162,7 +172,9 @@ class EnrollObjectViewModel @AssistedInject constructor(
 
     fun onCaptureClicked() {
         if (state.value.isCapturing || !state.value.canCaptureMore) return
-        _state.update { it.copy(isCapturing = true, shotIssue = null, inconsistentShotsRemoved = 0) }
+        _state.update {
+            it.copy(isCapturing = true, shotIssue = null, inconsistentShotsRemoved = 0, processingError = null)
+        }
         analyzer?.requestCapture()
     }
 
@@ -171,7 +183,7 @@ class EnrollObjectViewModel @AssistedInject constructor(
         _state.update {
             it.copy(
                 isRecording = true, shotIssue = null, inconsistentShotsRemoved = 0,
-                clipFoundNothing = false, clipSkippedPlainSides = false
+                clipFoundNothing = false, clipSkippedPlainSides = false, processingError = null
             )
         }
         analyzer?.requestClip()

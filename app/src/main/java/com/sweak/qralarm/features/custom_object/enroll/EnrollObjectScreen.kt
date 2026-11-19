@@ -167,6 +167,12 @@ private fun EnrollObjectContent(
                 }
             }
 
+            state.processingError?.let { message ->
+                Text(
+                    stringResource(R.string.custom_object_processing_error, message),
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
             if (state.cameraError) {
                 Text(stringResource(R.string.custom_object_camera_error), color = MaterialTheme.colorScheme.error)
             }

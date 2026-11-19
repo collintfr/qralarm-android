@@ -48,6 +48,8 @@ class EnrollmentAnalyzer(
     private var tester: CustomObjectAnalyzer? = null
     private var extractor: KeypointExtractor? = null
     private var embedder: ImageEmbedderEngine? = null
+    /** The appearance pre-filter is optional: if it cannot run, enrollment continues without it. */
+    private var embedderUnavailable = false
 
     fun requestCapture() = captureRequested.set(true)
 
@@ -135,7 +137,7 @@ class EnrollmentAnalyzer(
             val side = ReferenceBuilder.REFERENCE_MAX_SIDE
             val crop = if (cropped.width > side) Bitmap.createScaledBitmap(cropped, side, side, true)
                 .also { cropped.recycle() } else cropped
-            val embedding = (embedder ?: ImageEmbedderEngine(context).also { embedder = it }).embed(crop)
+            val embedding = embedOrNull(crop)
             val rgba = Mat()
             val gray = Mat()
             Utils.bitmapToMat(crop, rgba)
@@ -158,10 +160,28 @@ class EnrollmentAnalyzer(
         } catch (exception: Exception) {
             onError(exception)
             return null
+        } catch (error: LinkageError) {
+            // A native library that failed to load; reported like any other failure.
+            onError(IllegalStateException(error.message ?: error.javaClass.simpleName, error))
+            return null
         } finally {
             if (upright !== source) upright?.recycle()
             source?.recycle()
             image.close()
+        }
+    }
+
+    private fun embedOrNull(bitmap: Bitmap): FloatArray? {
+        if (embedderUnavailable) return null
+        return try {
+            (embedder ?: ImageEmbedderEngine(context).also { embedder = it }).embed(bitmap)
+        } catch (throwable: Throwable) {
+            if (throwable is VirtualMachineError) throw throwable
+            android.util.Log.w("EnrollmentAnalyzer", "Image embedder unavailable; continuing without it", throwable)
+            embedderUnavailable = true
+            embedder?.close()
+            embedder = null
+            null
         }
     }
 
