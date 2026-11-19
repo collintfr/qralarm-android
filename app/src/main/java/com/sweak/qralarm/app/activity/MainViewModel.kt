@@ -86,30 +86,34 @@ class MainViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Opens the alarm screen for an alarm that is ringing or snoozed. Call only while the
+     * activity is resumed and cancel on pause: a watcher left running in the background would
+     * queue a stale "go to the alarm" event while the alarm screen updates the alarm, and reopen
+     * an alarm screen that can no longer be closed once the alarm has been dismissed.
+     */
+    suspend fun observeActiveAlarms() {
+        alarmsRepository.getAllAlarms().collect { alarms ->
+            alarms.firstOrNull { alarm ->
+                alarm.isAlarmRunning || alarm.snoozeConfig.isAlarmSnoozed
+            }?.let { activeAlarm ->
+                if (activeAlarm.isAlarmRunning && !AlarmService.isRunning) {
+                    alarmsRepository.setAlarmRunning(
+                        alarmId = activeAlarm.alarmId,
+                        running = false
+                    )
+                    return@let
+                }
+
+                backendEventsChannel.send(
+                    MainActivityBackendEvent.NavigateToActiveAlarm(alarmId = activeAlarm.alarmId)
+                )
+            }
+        }
+    }
+
     fun onEvent(event: MainActivityUserEvent) {
         when (event) {
-            is MainActivityUserEvent.ObserveActiveAlarms -> viewModelScope.launch {
-                alarmsRepository.getAllAlarms().collect { alarms ->
-                    alarms.firstOrNull { alarm ->
-                        alarm.isAlarmRunning || alarm.snoozeConfig.isAlarmSnoozed
-                    }?.let { activeAlarm ->
-                        if (activeAlarm.isAlarmRunning && !AlarmService.isRunning) {
-                            alarmsRepository.setAlarmRunning(
-                                alarmId = activeAlarm.alarmId,
-                                running = false
-                            )
-                            return@let
-                        }
-
-                        backendEventsChannel.send(
-                            MainActivityBackendEvent.NavigateToActiveAlarm(
-                                alarmId = activeAlarm.alarmId
-                            )
-                        )
-                    }
-                }
-            }
-
             is MainActivityUserEvent.OnOnboardingFinished -> viewModelScope.launch {
                 userDataRepository.setIntroductionFinished(finished = true)
             }
